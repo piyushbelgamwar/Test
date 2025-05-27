@@ -104,3 +104,62 @@ private void saveInS3(FirmList firmList) {
 
     LOGGER.debug("firmList.saveInS3() : End");
 }
+
+private void saveInS3(FirmList firmList) {
+    LOGGER.info("FirmIdf-Override, Profile & Intact: Total No.of.Firms: {}",
+            firmList != null && firmList.getFirmAttributes() != null ? firmList.getFirmAttributes().size() : 0);
+
+    try {
+        // Ensure EFS path exists (for FARGATE)
+        if (Constants.FARGATE.equalsIgnoreCase(launchType)) {
+            Path efsPath = Paths.get(efsPathFargate);
+            if (!Files.exists(efsPath) || !Files.isDirectory(efsPath)) {
+                Files.createDirectories(efsPath);
+            }
+        }
+
+        // Create temp file
+        File tempFile = Constants.FARGATE.equalsIgnoreCase(launchType)
+                ? File.createTempFile("firmList", Constants.JSON_FORMAT, new File(efsPathFargate))
+                : File.createTempFile("firmList", Constants.JSON_FORMAT);
+
+        // Serialize FirmList to JSON and write to file
+        objectMapper.setPropertyNamingStrategy(s3NamingStrategy);
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile))) {
+            StringWriter stringWriter = new StringWriter();
+            objectMapper.writeValue(stringWriter, firmList);
+            writer.write(stringWriter.toString());
+            writer.flush();
+        }
+
+        // Generate safe UUID-based file name
+        String fileName = String.format("dataFirmIdentification_1.1_%s.json", UUID.randomUUID());
+
+        // Construct bucket and key
+        String cleanBucketName = CommonUtility.whiteList(paramEnv.getProperty(s3BucketName)).trim();
+        String s3Key = "firmidentification/data/" + fileName;
+
+        LOGGER.info("Uploading to S3:\n Bucket -> {}\n Key -> {}", cleanBucketName, s3Key);
+
+        // Build and execute PutObjectRequest
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(cleanBucketName)
+                .key(s3Key)
+                .contentType("application/json")
+                .build();
+
+        s3Client.putObject(request, RequestBody.fromFile(tempFile));
+
+        LOGGER.info("S3 upload successful: {}", s3Key);
+
+        // Clean up
+        Files.deleteIfExists(tempFile.toPath());
+
+    } catch (IOException e) {
+        LOGGER.error("IOException during S3 save: {}", e.getMessage(), e);
+    } catch (Exception e) {
+        LOGGER.error("Unexpected error during S3 save: {}", e.getMessage(), e);
+    }
+
+    LOGGER.debug("firmList.saveInS3() : End");
+}
