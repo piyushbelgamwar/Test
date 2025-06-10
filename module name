@@ -1,0 +1,19 @@
+Thanks for confirming!
+
+Here’s your finalized list of service/module names extracted from all shared images:
+
+⸻
+
+✅ Complete List of Services / Modules
+	1.	DCP-Batch-ProfileGeneration
+	2.	dcp-lib-firmprofilecalculation
+	3.	DCP-Batch-ScheduleGenerator
+	4.	dcp-lib-firmschedulecalculation
+	5.	DCP-Lambda-IntactAggregatorDataRefresh
+	6.	DCP-SCS-FirmIdentification-Service
+	7.	DCP-SCS-IntactAggregator-Service
+	8.	Firm Attribute Service
+
+⸻
+
+If you want these grouped by job category (like Data Refresh, Schedule Generation, Profile Generation), or as part of a system architecture document or Confluence-ready table — just let me know!
