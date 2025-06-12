@@ -1,67 +1,76 @@
-Thanks, Piyush! Based on all four images you’ve uploaded, here’s a detailed breakdown of all the data flows and mappings in PID jobs 1.1, 1.2, and 1.3:
+Thanks for uploading the additional images, Piyush. Here’s the extended and complete data flow mapping from all the PID jobs as per the new screenshots:
 
 ⸻
 
-✅ PID 1.1 Job: Direct Mappings to RegData Tables
+✅ Continued from PID 1.1 Job – Data Mapping Tables
 
-These columns map directly from Intact data to RegData tables:
+3. FDC_APP_METADATA.FIRM_GROUP_MEMBERSHIP (Extended view)
 
-1. FDC_APP_METADATA.FIRMS
-
-Intact Attribute	RegData Column
-FirmInformation.AccountID	ACCOUNT_ID
-FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
-FirmInformation.RegisteredAddressPostOut	REGISTERED_ADDRESS_POST_OUT
-FirmInformation.RegisteredAddressPostIn	REGISTERED_ADDRESS_POST_IN
-FirmInformation.FirmName	FIRM_NAME
-FirmInformation.AccountingReferenceDate	ACCOUNTING_REFERENCE_DATE
-FirmInformation.LegalEntityID	LEGAL_ENTITY_ID
-
-2. FDC_APP_METADATA.REGULATED_FIRM
-
-Intact Attribute	RegData Column
-FirmInformation.AccountID	ACCOUNT_ID
-FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
-FirmInformation.FirmName	FIRM_NAME
-
-3. FDC_APP_METADATA.FIRM_GROUP_MEMBERSHIP
-
-Intact Attribute	RegData Column
+Intact Attribute	Column in RegData
 FirmGroups.FirmGroupID	FIRM_GROUP_ID
 FirmGroups.AccountID	FRM_ACCOUNT_ID
 FirmGroups.GroupReferenceNumber	GROUP_REFERENCE_NUMBER
 FirmGroups.EffectiveFrom	MEMBERSHIP_EFFECTIVE_FROM
+FirmGroups.EffectiveTo	MEMBERSHIP_EFFECTIVE_TO
+FirmGroups.FirmGroupType	FIRM_GROUP_TYPE
+FirmGroups.FirmGroupName	FIRM_GROUP_NAME
 
 
 ⸻
 
-✅ PID 1.2 Job: Profile-Based Calculations (Using JSON)
+✅ New Tables from Images
 
-These tables are populated not from direct Intact mapping but by processing profile JSON using rules (e.g., Profile and RAG Definition v3.0):
-	1.	FDC_APP_METADATA.FIRM_PROFILE
-	2.	FDC_APP_METADATA.PROFILE_CHARACTERISTICS_LINK
-	3.	FDC_APP_METADATA.FIRM_GROUP
-	4.	FDC_APP_METADATA.GROUP_PROFILE_LINK
-	5.	FDC_APP_METADATA.FIRM_GROUP_LINK
-	6.	FDC_APP_METADATA.FUND_THRESHOLD_DETAILS
+4. FDC_APP_METADATA.AIF_FUND_MANAGERS
 
-⸻
+Intact Attribute	Column in RegData
+ProductManager.ProductID	PRODUCT_ID
+ProductManager.ProductTypeName	PRODUCT_TYPE_NAME
+ProductManager.ProductInvolvementTypeID	PRODUCT_INVOLVEMENT_TYPE_ID
+ProductManager.ProductInvolvementID	PRODUCT_INVOLVEMENT_ID
+ProductManager.AccountID	FRM_ACCOUNT_ID
+ProductManager.EffectiveFrom	EFFECTIVE_FROM
+ProductManager.EffectiveTo	EFFECTIVE_TO
 
-✅ PID 1.3 Job: Schedule-Based Calculations (Using Drools)
-
-These are not directly mapped to Intact. Instead, they are calculated via schedule rules (e.g., IRMA v49):
-	1.	FDC_APP_METADATA.SCHEDULE_DATA_ITEM
-	2.	FDC_APP_METADATA.FIRM_DATA_ITEM
-	3.	FDC_APP_METADATA.FUND
-	4.	FDC_APP_METADATA.FIRM_PREFERENCE
-	5.	FDC_APP_METADATA.CURRENCY_PREFERENCE
 
 ⸻
 
-📨 Email Schedule Job (PID 2.0)
+5. FDC_APP_METADATA.AIF_FUNDS
 
-This appears to be a separate job for generating schedule emails based on the metadata processed from the above jobs.
+Intact Attribute	Column in RegData
+Product.ProductID	PRODUCT_ID
+Product.ProductReferenceNumber	PRODUCT_REFERENCE_NUMBER
+Product.ProductName	PRODUCT_NAME
+
 
 ⸻
 
-Would you like a diagram showing these flows, or a CSV/Excel version for easier reporting or documentation?
+6. FDC_APP_METADATA.REFERENCING_DATES
+
+Intact Attribute	Column in RegData
+FirmInformation.AccountID	FRM_ACCOUNT_ID
+FirmInformation.ICARADate	ICARA_DATE
+
+
+⸻
+
+7. FDC_APP_PSD.PSD_FIRMS
+
+Intact Attribute	Column in RegData
+FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
+FirmInformation.FirmName	FIRM_NAME
+
+
+⸻
+
+🔁 Summary of PID Jobs (Consolidated View)
+
+PID Job	Type	Description
+PID 1.1	Direct Mapping	From FirmInformation and FirmGroups → Directly populates FDC_APP_METADATA.* tables
+PID 1.2	Profile Calculation (JSON)	Builds firm profiles, group links, fund thresholds using profile JSON
+PID 1.3	Schedule Calculation (Drools)	Builds SCHEDULE_DATA_ITEM, FIRM_DATA_ITEM, etc., using drools logic
+PID 2.0	Email Schedule	Generates email schedules using profile/schedule outputs
+
+
+⸻
+
+Would you like me to deliver this as a formatted Excel sheet or create a data flow diagram showing the entire end-to-end job structure?
