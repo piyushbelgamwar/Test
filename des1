@@ -1,0 +1,67 @@
+Thanks, Piyush! Based on all four images you’ve uploaded, here’s a detailed breakdown of all the data flows and mappings in PID jobs 1.1, 1.2, and 1.3:
+
+⸻
+
+✅ PID 1.1 Job: Direct Mappings to RegData Tables
+
+These columns map directly from Intact data to RegData tables:
+
+1. FDC_APP_METADATA.FIRMS
+
+Intact Attribute	RegData Column
+FirmInformation.AccountID	ACCOUNT_ID
+FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
+FirmInformation.RegisteredAddressPostOut	REGISTERED_ADDRESS_POST_OUT
+FirmInformation.RegisteredAddressPostIn	REGISTERED_ADDRESS_POST_IN
+FirmInformation.FirmName	FIRM_NAME
+FirmInformation.AccountingReferenceDate	ACCOUNTING_REFERENCE_DATE
+FirmInformation.LegalEntityID	LEGAL_ENTITY_ID
+
+2. FDC_APP_METADATA.REGULATED_FIRM
+
+Intact Attribute	RegData Column
+FirmInformation.AccountID	ACCOUNT_ID
+FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
+FirmInformation.FirmName	FIRM_NAME
+
+3. FDC_APP_METADATA.FIRM_GROUP_MEMBERSHIP
+
+Intact Attribute	RegData Column
+FirmGroups.FirmGroupID	FIRM_GROUP_ID
+FirmGroups.AccountID	FRM_ACCOUNT_ID
+FirmGroups.GroupReferenceNumber	GROUP_REFERENCE_NUMBER
+FirmGroups.EffectiveFrom	MEMBERSHIP_EFFECTIVE_FROM
+
+
+⸻
+
+✅ PID 1.2 Job: Profile-Based Calculations (Using JSON)
+
+These tables are populated not from direct Intact mapping but by processing profile JSON using rules (e.g., Profile and RAG Definition v3.0):
+	1.	FDC_APP_METADATA.FIRM_PROFILE
+	2.	FDC_APP_METADATA.PROFILE_CHARACTERISTICS_LINK
+	3.	FDC_APP_METADATA.FIRM_GROUP
+	4.	FDC_APP_METADATA.GROUP_PROFILE_LINK
+	5.	FDC_APP_METADATA.FIRM_GROUP_LINK
+	6.	FDC_APP_METADATA.FUND_THRESHOLD_DETAILS
+
+⸻
+
+✅ PID 1.3 Job: Schedule-Based Calculations (Using Drools)
+
+These are not directly mapped to Intact. Instead, they are calculated via schedule rules (e.g., IRMA v49):
+	1.	FDC_APP_METADATA.SCHEDULE_DATA_ITEM
+	2.	FDC_APP_METADATA.FIRM_DATA_ITEM
+	3.	FDC_APP_METADATA.FUND
+	4.	FDC_APP_METADATA.FIRM_PREFERENCE
+	5.	FDC_APP_METADATA.CURRENCY_PREFERENCE
+
+⸻
+
+📨 Email Schedule Job (PID 2.0)
+
+This appears to be a separate job for generating schedule emails based on the metadata processed from the above jobs.
+
+⸻
+
+Would you like a diagram showing these flows, or a CSV/Excel version for easier reporting or documentation?
