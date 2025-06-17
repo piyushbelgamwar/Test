@@ -1,76 +1,44 @@
-Thanks for uploading the additional images, Piyush. Here’s the extended and complete data flow mapping from all the PID jobs as per the new screenshots:
+Sure, Piyush! Here's a clear and structured mapping of **Rule 2** and **Rule 3** — showing:
 
-⸻
+✅ Rule condition
+➡️ Corresponding JSON field name
+📍 JSON path
 
-✅ Continued from PID 1.1 Job – Data Mapping Tables
+---
 
-3. FDC_APP_METADATA.FIRM_GROUP_MEMBERSHIP (Extended view)
+## ✅ **Rule 2: Delete future schedules in RegData**
 
-Intact Attribute	Column in RegData
-FirmGroups.FirmGroupID	FIRM_GROUP_ID
-FirmGroups.AccountID	FRM_ACCOUNT_ID
-FirmGroups.GroupReferenceNumber	GROUP_REFERENCE_NUMBER
-FirmGroups.EffectiveFrom	MEMBERSHIP_EFFECTIVE_FROM
-FirmGroups.EffectiveTo	MEMBERSHIP_EFFECTIVE_TO
-FirmGroups.FirmGroupType	FIRM_GROUP_TYPE
-FirmGroups.FirmGroupName	FIRM_GROUP_NAME
+| **#** | **Condition**                                                          | **JSON Field**             | **JSON Path**                       |
+| ----- | ---------------------------------------------------------------------- | -------------------------- | ----------------------------------- |
+| 1     | Firm Status = `"Registered"`                                           | `FirmStatusName`           | `FirmInformation.FirmStatusName`    |
+| 2     | Sub-Status = `"Former 3MLD"`                                           | `FirmSubStatus`            | `FirmInformation.FirmSubStatus`     |
+| 3     | 3MLD Status = `"Formerly 3MLD Registered"` OR `"Registration Revoked"` | `ThreeMLDStatus` (missing) | ❌ *Not in JSON – needs to be added* |
+| 4     | PSD/EMD Status **≠** any of: `"Authorised PI"`, `"Small PI"`, etc.     | `PSD_EMD_Status` (missing) | ❌ *Not in JSON – needs to be added* |
+| 5     | CBTL Status ≠ `"Registered"`                                           | `CBTLStatus` (missing)     | ❌ *Not in JSON – needs to be added* |
+| 6     | MLRs Status ≠ `"MLRs Registered"`                                      | `MLRStatus`                | `FirmInformation.MLRStatus`         |
 
+---
 
-⸻
+## ✅ **Rule 3: Delete future schedules in RegData**
 
-✅ New Tables from Images
+| **#** | **Condition**                                                                                             | **JSON Field**             | **JSON Path**                       |
+| ----- | --------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------- |
+| 1     | Firm Status = `"Registered"`                                                                              | `FirmStatusName`           | `FirmInformation.FirmStatusName`    |
+| 2     | PSD/EMD Status = any of:<br> "Cancelled - Authorised PI", "PSD Revoked PI", "Cancelled – Small EMI", etc. | `PSD_EMD_Status` (missing) | ❌ *Not in JSON – needs to be added* |
+| 3     | 3MLD Status ≠ `"3MLD Registered"`                                                                         | `ThreeMLDStatus` (missing) | ❌ *Not in JSON – needs to be added* |
+| 4     | CBTL Status ≠ `"Registered"`                                                                              | `CBTLStatus` (missing)     | ❌ *Not in JSON – needs to be added* |
+| 5     | MLRs Status ≠ `"MLRs Registered"`                                                                         | `MLRStatus`                | `FirmInformation.MLRStatus`         |
 
-4. FDC_APP_METADATA.AIF_FUND_MANAGERS
+---
 
-Intact Attribute	Column in RegData
-ProductManager.ProductID	PRODUCT_ID
-ProductManager.ProductTypeName	PRODUCT_TYPE_NAME
-ProductManager.ProductInvolvementTypeID	PRODUCT_INVOLVEMENT_TYPE_ID
-ProductManager.ProductInvolvementID	PRODUCT_INVOLVEMENT_ID
-ProductManager.AccountID	FRM_ACCOUNT_ID
-ProductManager.EffectiveFrom	EFFECTIVE_FROM
-ProductManager.EffectiveTo	EFFECTIVE_TO
+### 🔧 Fields Missing in Your JSON That Must Be Added:
 
+To fully evaluate Rule 2 and Rule 3:
 
-⸻
+* `"ThreeMLDStatus"`
+* `"PSD_EMD_Status"`
+* `"CBTLStatus"`
 
-5. FDC_APP_METADATA.AIF_FUNDS
+---
 
-Intact Attribute	Column in RegData
-Product.ProductID	PRODUCT_ID
-Product.ProductReferenceNumber	PRODUCT_REFERENCE_NUMBER
-Product.ProductName	PRODUCT_NAME
-
-
-⸻
-
-6. FDC_APP_METADATA.REFERENCING_DATES
-
-Intact Attribute	Column in RegData
-FirmInformation.AccountID	FRM_ACCOUNT_ID
-FirmInformation.ICARADate	ICARA_DATE
-
-
-⸻
-
-7. FDC_APP_PSD.PSD_FIRMS
-
-Intact Attribute	Column in RegData
-FirmInformation.FirmReferenceNumber	FIRM_REFERENCE_NUMBER
-FirmInformation.FirmName	FIRM_NAME
-
-
-⸻
-
-🔁 Summary of PID Jobs (Consolidated View)
-
-PID Job	Type	Description
-PID 1.1	Direct Mapping	From FirmInformation and FirmGroups → Directly populates FDC_APP_METADATA.* tables
-PID 1.2	Profile Calculation (JSON)	Builds firm profiles, group links, fund thresholds using profile JSON
-PID 1.3	Schedule Calculation (Drools)	Builds SCHEDULE_DATA_ITEM, FIRM_DATA_ITEM, etc., using drools logic
-PID 2.0	Email Schedule	Generates email schedules using profile/schedule outputs
-
-
-⸻
-
-Would you like me to deliver this as a formatted Excel sheet or create a data flow diagram showing the entire end-to-end job structure?
+Would you like a JSON structure suggestion with these fields added for testing rule evaluation?
