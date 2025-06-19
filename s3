@@ -1,165 +1,73 @@
-package uk.org.fca.gabriel.scs.firmidentification.config;
+// Rule 2: Delete future schedules for firms that have left 3MLD and are not any form of PI/EMI via PSD or EMD
+rule "Delete Future RegData Schedules for Former 3MLD"
+when
+    $fri: FirmRegulatoryInformation(
+        firmInformation != null,
+        firmInformation.firmStatusName == "Registered",
+        firmInformation.firmSubStatus  == "Former 3MLD",
+        (firmInformation.threeMldStatus == "Formerly 3MLD Registered" ||
+         firmInformation.threeMldStatus == "Registration Revoked"),
+        // Neither PSD nor EMD is any of the authorised/small institutions
+        eval(
+          !java.util.Arrays.asList(
+              "Authorised Payment Institution",
+              "Small Payment Institution",
+              "Registered Account Information Service Provider",
+              "Authorised Electronic Money Institution",
+              "Small Electronic Money Institution"
+          ).contains(firmInformation.psdStatus)
+          ||
+          !java.util.Arrays.asList(
+              "Authorised Payment Institution",
+              "Small Payment Institution",
+              "Registered Account Information Service Provider",
+              "Authorised Electronic Money Institution",
+              "Small Electronic Money Institution"
+          ).contains(firmInformation.emdStatus)
+        ),
+        firmInformation.cbtlStatus != "Registered",
+        firmInformation.mlrStatus  != "MLRs Registered"
+    )
+then
+    MyRegDataService.deleteFutureSchedules($fri.getFirmReferenceNumber());
+end
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Profile;
-import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.S3Configuration;
-
-@Configuration
-public class S3Config {
-
-    @Value("${amazon.region}")
-    private String awsRegion;
-
-    @Bean
-    @Profile("!local")
-    public S3Client s3Client() {
-        return S3Client.builder()
-                .region(Region.of(awsRegion))
-                .serviceConfiguration(S3Configuration.builder()
-                        .pathStyleAccessEnabled(true)
-                        .build())
-                .build();
-    }
-
-    @Bean
-    @Profile("local")
-    public S3Client s3ClientLocal() {
-        // Replace with your actual values from ~/.aws/credentials or temporary credentials
-        AwsSessionCredentials sessionCredentials = AwsSessionCredentials.create(
-                "ASIAxxxxxxxxxxxxxxx",        // accessKeyId
-                "xxxxxxxxxxxxxxxxxxxx",       // secretAccessKey
-                "IQxxxxxxxxxxxxxxxxxxxx"      // sessionToken
-        );
-
-        return S3Client.builder()
-                .region(Region.of(awsRegion)) // from application.properties/yml
-                .credentialsProvider(StaticCredentialsProvider.create(sessionCredentials))
-                .serviceConfiguration(S3Configuration.builder()
-                        .pathStyleAccessEnabled(true)
-                        .build())
-                .build();
-    }
-}
-
-
-@Autowired
-private S3Client s3Client;
-
-@Value("${s3.bucket.name}")
-private String bucketName;
-
-private void saveInS3(FirmList firmList) {
-    LOGGER.info("FirmIdf-Override, Profile & Intact: Total No.of.Firms: {}",
-            firmList != null && firmList.getFirmAttributes() != null ? firmList.getFirmAttributes().size() : 0);
-
-    try {
-        // Create safe temp file
-        File tempFile = Constants.FARGATE.equalsIgnoreCase(launchType)
-                ? File.createTempFile("firmList", Constants.JSON_FORMAT, new File(efsPathFargate))
-                : File.createTempFile("firmList", Constants.JSON_FORMAT);
-
-        // Serialize FirmList to JSON and write to file
-        objectMapper.setPropertyNamingStrategy(s3NamingStrategy);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile))) {
-            StringWriter stringWriter = new StringWriter();
-            objectMapper.writeValue(stringWriter, firmList);
-            writer.write(stringWriter.toString());
-            writer.flush();
-        }
-
-        // Safe file name using UUID
-        String fileName = String.format("dataFirmIdentification_1.1_%s.json", UUID.randomUUID());
-
-        // Create key path (folder in S3)
-        String s3Key = "firmidentification/data/" + fileName;
-
-        LOGGER.info("Uploading to S3:\n Bucket -> {}\n Key -> {}", bucketName, s3Key);
-
-        // Build PutObjectRequest
-        PutObjectRequest request = PutObjectRequest.builder()
-                .bucket(bucketName)
-                .key(s3Key)
-                .contentType("application/json")
-                .build();
-
-        // Upload to S3
-        s3Client.putObject(request, RequestBody.fromFile(tempFile));
-
-        LOGGER.info("S3 upload successful: {}", s3Key);
-
-        // Delete temp file
-        Files.deleteIfExists(tempFile.toPath());
-
-    } catch (IOException e) {
-        LOGGER.error("IOException during S3 save: {}", e.getMessage(), e);
-    } catch (Exception e) {
-        LOGGER.error("Unexpected error during S3 save: {}", e.getMessage(), e);
-    }
-
-    LOGGER.debug("firmList.saveInS3() : End");
-}
-
-private void saveInS3(FirmList firmList) {
-    LOGGER.info("FirmIdf-Override, Profile & Intact: Total No.of.Firms: {}",
-            firmList != null && firmList.getFirmAttributes() != null ? firmList.getFirmAttributes().size() : 0);
-
-    try {
-        // Ensure EFS path exists (for FARGATE)
-        if (Constants.FARGATE.equalsIgnoreCase(launchType)) {
-            Path efsPath = Paths.get(efsPathFargate);
-            if (!Files.exists(efsPath) || !Files.isDirectory(efsPath)) {
-                Files.createDirectories(efsPath);
-            }
-        }
-
-        // Create temp file
-        File tempFile = Constants.FARGATE.equalsIgnoreCase(launchType)
-                ? File.createTempFile("firmList", Constants.JSON_FORMAT, new File(efsPathFargate))
-                : File.createTempFile("firmList", Constants.JSON_FORMAT);
-
-        // Serialize FirmList to JSON and write to file
-        objectMapper.setPropertyNamingStrategy(s3NamingStrategy);
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(tempFile))) {
-            StringWriter stringWriter = new StringWriter();
-            objectMapper.writeValue(stringWriter, firmList);
-            writer.write(stringWriter.toString());
-            writer.flush();
-        }
-
-        // Generate safe UUID-based file name
-        String fileName = String.format("dataFirmIdentification_1.1_%s.json", UUID.randomUUID());
-
-        // Construct bucket and key
-        String cleanBucketName = CommonUtility.whiteList(paramEnv.getProperty(s3BucketName)).trim();
-        String s3Key = "firmidentification/data/" + fileName;
-
-        LOGGER.info("Uploading to S3:\n Bucket -> {}\n Key -> {}", cleanBucketName, s3Key);
-
-        // Build and execute PutObjectRequest
-        PutObjectRequest request = PutObjectRequest.builder()
-                .bucket(cleanBucketName)
-                .key(s3Key)
-                .contentType("application/json")
-                .build();
-
-        s3Client.putObject(request, RequestBody.fromFile(tempFile));
-
-        LOGGER.info("S3 upload successful: {}", s3Key);
-
-        // Clean up
-        Files.deleteIfExists(tempFile.toPath());
-
-    } catch (IOException e) {
-        LOGGER.error("IOException during S3 save: {}", e.getMessage(), e);
-    } catch (Exception e) {
-        LOGGER.error("Unexpected error during S3 save: {}", e.getMessage(), e);
-    }
-
-    LOGGER.debug("firmList.saveInS3() : End");
-}
+// Rule 3: Handle firms with cancelled PSD or EMD but not 3MLD, CBTL or MLR registered
+rule "Handle Cancelled PSD/EMD Firms"
+when
+    $fri: FirmRegulatoryInformation(
+        firmInformation != null,
+        firmInformation.firmStatusName == "Registered",
+        // Either PSD or EMD is one of the cancelled states
+        eval(
+          java.util.Arrays.asList(
+            "Cancelled - Authorised PI",
+            "Cancelled - Small PI",
+            "Cancelled - RAISP",
+            "Cancelled - PSD2 Excluded",
+            "PSD Revoked PI",
+            "Cancelled – Authorised EMI",
+            "Cancelled – Small EMI",
+            "EMD Revoked – Authorised EMI",
+            "EMD Revoked – Small EMI"
+          ).contains(firmInformation.psdStatus)
+          ||
+          java.util.Arrays.asList(
+            "Cancelled - Authorised PI",
+            "Cancelled - Small PI",
+            "Cancelled - RAISP",
+            "Cancelled - PSD2 Excluded",
+            "PSD Revoked PI",
+            "Cancelled – Authorised EMI",
+            "Cancelled – Small EMI",
+            "EMD Revoked – Authorised EMI",
+            "EMD Revoked – Small EMI"
+          ).contains(firmInformation.emdStatus)
+        ),
+        firmInformation.threeMldStatus != "3MLD Registered",
+        firmInformation.cbtlStatus   != "Registered",
+        firmInformation.mlrStatus    != "MLRs Registered"
+    )
+then
+    masterRuleOutcome.add(DroolConstants.CANCELLED_PSD_EMD_FIRM);
+end
