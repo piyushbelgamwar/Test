@@ -1,19 +1,143 @@
-Thanks for confirming!
 
-Here’s your finalized list of service/module names extracted from all shared images:
+ Format:
 
-⸻
+  ```
+  {PREFIX}_{JIRA-ID}_{COMPONENT}_{SCOPE}
+  ```
 
-✅ Complete List of Services / Modules
-	1.	DCP-Batch-ProfileGeneration
-	2.	dcp-lib-firmprofilecalculation
-	3.	DCP-Batch-ScheduleGenerator
-	4.	dcp-lib-firmschedulecalculation
-	5.	DCP-Lambda-IntactAggregatorDataRefresh
-	6.	DCP-SCS-FirmIdentification-Service
-	7.	DCP-SCS-IntactAggregator-Service
-	8.	Firm Attribute Service
+ Prefixes & Lifespans:
 
-⸻
+   REL (1–6 mo): new feature rollouts
+   OPS (permanent): kill-switches, maintenance
+   EXP (2–8 wk): A/B tests, experiments
+   MIG (3–12 mo): data/system migrations
+   TEMP (≤ 90 days): hotfixes, workarounds
+   BUG (2–4 wk): bug-fix rollouts
 
-If you want these grouped by job category (like Data Refresh, Schedule Generation, Profile Generation), or as part of a system architecture document or Confluence-ready table — just let me know!
+ Scopes:
+  `dev`, `test`, `canary`, `prod`, `internal`, `all`
+  (Extend for regions: e.g. `prod-us`)
+
+ Quick Checklist:
+
+   ✅ Uppercase prefix & JIRA-ID; lowercase kebab-case component & scope
+   ✅ Valid JIRA ticket exists
+   ✅ ≤ 60 chars, no spaces/special chars
+
+
+ Examples:
+
+   REL-REG-321-scs-processtrackingbatchstartprocess-all
+   BUG-REG-322-workflow-integrationprocess-stepfunction-all
+   
+   
+   TAGS should add compulsory here 
+   jira:<ID>, module:<name>, team:<owner>, expiry:<YYYY-MM-DD>, type:<release|experiment|bugfix|ops>.
+   
+   
+   
+   
+   
+LaunchDarkly Roles & Permissions (Easy Reference)
+
+---
+
+ 1. Administrator
+
+Environments: Dev, Sit, Bat, NFT, ITE, Prod
+Can:
+
+ Create and edit flags & their variations
+ Build targeting rules (who sees what)
+ Turn flags on or off
+ Schedule automatic rollouts at specific times
+ Archive or delete old flags
+ Create and manage user segments
+ Configure environments (add/remove)
+ View and export all logs and flag-usage data
+
+---
+
+ 2. Flag Owner
+
+Environments: Dev, Sit, Bat, NFT, ITE, Prod
+Can:
+
+ Create and edit flags (name, description, variations)
+ Define and update targeting rules
+ Toggle flags on/off
+ Schedule or automate rollouts
+ Archive flags when they’re no longer needed
+ View logs and usage metrics for their flags
+
+---
+
+ 3. DevOps / UI Team
+
+Environments: Dev, Sit, Bat
+Can:
+
+ Create new flags
+ Edit flag settings (names, descriptions, rules)
+ Toggle flags on/off in non-production environments
+ Create and manage user segments in non-prod
+ View logs and metrics for troubleshooting
+
+---
+
+ 4. Developer
+
+Environments: Dev, Sit, Bat
+Can:
+
+ Create flags (key, name, description)
+ View flag configurations and usage metrics
+ View existing user segments
+ View logs
+
+---
+
+ 5. SME & AEM Teams
+
+Environments: Dev, Sit, Bat
+Can:
+
+ Turn flags on or off
+ View flag configurations, rules, and metrics
+ View logs
+
+---
+
+ 6. CI/CD & Chatbot Service Accounts
+
+Environments: Dev, Sit, Bat
+Can:
+
+ Toggle flags via API or webhook
+ Schedule rollouts programmatically
+ View flags and segments
+
+---
+
+ 7. View-Only Stakeholders
+
+Environments: Dev, Sit, Bat
+Can:
+
+ View flag definitions and metadata
+ View usage metrics and dashboards
+ View audit logs
+
+---
+
+ 8. Auditors & Compliance
+
+Environments: Dev, Sit, Bat
+Can:
+
+ View flags and segments
+ View and export full change history and metadata
+ Generate compliance reports via the LaunchDarkly API
+
+---
+
