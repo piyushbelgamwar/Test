@@ -1,44 +1,32 @@
-Sure, Piyush! Here's a clear and structured mapping of **Rule 2** and **Rule 3** — showing:
+<dependencies>
+  <!-- LaunchDarkly Java Server SDK -->
+  <dependency>
+    <groupId>com.launchdarkly</groupId>
+    <artifactId>launchdarkly-java-server-sdk</artifactId>
+    <version>7.9.0</version>
+  </dependency>
+</dependencies>
 
-✅ Rule condition
-➡️ Corresponding JSON field name
-📍 JSON path
 
----
+import com.launchdarkly.sdk.LDClient;
+import com.launchdarkly.sdk.LDConfig;
+import com.launchdarkly.sdk.LDContext;
 
-## ✅ **Rule 2: Delete future schedules in RegData**
+public class SimpleFlagCheck {
+  public static void main(String[] args) {
+    // 1. Initialize the client (your SDK key in place of "YOUR_SDK_KEY")
+    LDClient ldClient = new LDClient("YOUR_SDK_KEY", LDConfig.DEFAULT);
 
-| **#** | **Condition**                                                          | **JSON Field**             | **JSON Path**                       |
-| ----- | ---------------------------------------------------------------------- | -------------------------- | ----------------------------------- |
-| 1     | Firm Status = `"Registered"`                                           | `FirmStatusName`           | `FirmInformation.FirmStatusName`    |
-| 2     | Sub-Status = `"Former 3MLD"`                                           | `FirmSubStatus`            | `FirmInformation.FirmSubStatus`     |
-| 3     | 3MLD Status = `"Formerly 3MLD Registered"` OR `"Registration Revoked"` | `ThreeMLDStatus` (missing) | ❌ *Not in JSON – needs to be added* |
-| 4     | PSD/EMD Status **≠** any of: `"Authorised PI"`, `"Small PI"`, etc.     | `PSD_EMD_Status` (missing) | ❌ *Not in JSON – needs to be added* |
-| 5     | CBTL Status ≠ `"Registered"`                                           | `CBTLStatus` (missing)     | ❌ *Not in JSON – needs to be added* |
-| 6     | MLRs Status ≠ `"MLRs Registered"`                                      | `MLRStatus`                | `FirmInformation.MLRStatus`         |
+    // 2. Create the *minimal* context (just a unique key, no user attributes)
+    LDContext ctx = LDContext.create("system");
 
----
+    // 3. Check the flag
+    String flagKey = "my-feature-flag";
+    boolean isOn = ldClient.boolVariation(flagKey, ctx, false);
 
-## ✅ **Rule 3: Delete future schedules in RegData**
+    System.out.println(flagKey + " is " + (isOn ? "ON" : "OFF"));
 
-| **#** | **Condition**                                                                                             | **JSON Field**             | **JSON Path**                       |
-| ----- | --------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------- |
-| 1     | Firm Status = `"Registered"`                                                                              | `FirmStatusName`           | `FirmInformation.FirmStatusName`    |
-| 2     | PSD/EMD Status = any of:<br> "Cancelled - Authorised PI", "PSD Revoked PI", "Cancelled – Small EMI", etc. | `PSD_EMD_Status` (missing) | ❌ *Not in JSON – needs to be added* |
-| 3     | 3MLD Status ≠ `"3MLD Registered"`                                                                         | `ThreeMLDStatus` (missing) | ❌ *Not in JSON – needs to be added* |
-| 4     | CBTL Status ≠ `"Registered"`                                                                              | `CBTLStatus` (missing)     | ❌ *Not in JSON – needs to be added* |
-| 5     | MLRs Status ≠ `"MLRs Registered"`                                                                         | `MLRStatus`                | `FirmInformation.MLRStatus`         |
-
----
-
-### 🔧 Fields Missing in Your JSON That Must Be Added:
-
-To fully evaluate Rule 2 and Rule 3:
-
-* `"ThreeMLDStatus"`
-* `"PSD_EMD_Status"`
-* `"CBTLStatus"`
-
----
-
-Would you like a JSON structure suggestion with these fields added for testing rule evaluation?
+    // 4. Close the client when the app shuts down
+    ldClient.close();
+  }
+}
