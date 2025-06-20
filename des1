@@ -1,43 +1,45 @@
 import com.launchdarkly.sdk.*;
 import com.launchdarkly.sdk.server.*;
 
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
-public class LDFlagManager {
+public class LaunchDarklyDateToggle {
 
-    private static final String LD_SDK_KEY = "YOUR_SDK_KEY";
-    private static final String USER_KEY = "user-123"; // Can be dynamic or user ID
-
-    private static final String FEATURE_FLAG_KEY = "your-flag-key";
+    private static final String SDK_KEY = "YOUR_SDK_KEY"; // Replace with your actual key
+    private static final String FLAG_KEY = "toggle-date-flag"; // This flag stores a date like "25-12-2025"
 
     public static void main(String[] args) {
-        boolean result = checkFlagStatusBasedOnTime();
-        System.out.println("Should serve flag: " + result);
+        boolean isToggleActive = isFlagOnBasedOnDate();
+        System.out.println("Feature toggle active: " + isToggleActive);
     }
 
-    public static boolean checkFlagStatusBasedOnTime() {
-        try (LDClient ldClient = new LDClient(LD_SDK_KEY)) {
+    public static boolean isFlagOnBasedOnDate() {
+        try (LDClient ldClient = new LDClient(SDK_KEY)) {
 
-            // Scheduled time: June 20, 2025, 5:51 AM BST → convert to UTC
-            ZonedDateTime scheduledBST = ZonedDateTime.of(
-                    2025, 6, 20, 5, 51, 0, 0,
-                    ZoneId.of("Europe/London")
-            );
-            Instant scheduledTimeUTC = scheduledBST.toInstant();
+            // Use anonymous context
+            LDContext context = LDContext.builder("anonymous").anonymous(true).build();
 
-            Instant now = Instant.now();
+            // Fetch the string variation (date like "25-12-2025")
+            String flagValue = ldClient.stringVariation(FLAG_KEY, context, null);
 
-            boolean isAfterTime = now.isAfter(scheduledTimeUTC);
+            if (flagValue == null || flagValue.equalsIgnoreCase("null")) {
+                return false; // Default: OFF
+            }
 
-            // Build context with custom attribute
-            LDContext context = LDContext.builder(USER_KEY)
-                    .set("isAfterTime", isAfterTime)
-                    .build();
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+                sdf.setLenient(false);
 
-            // Flag evaluation
-            return ldClient.boolVariation(FEATURE_FLAG_KEY, context, false);
+                Date targetDate = sdf.parse(flagValue);
+                Date currentDate = new Date();
+
+                return currentDate.compareTo(targetDate) >= 0;
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                return false; // If date parsing fails, turn off the flag
+            }
         }
     }
 }
