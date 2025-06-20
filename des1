@@ -1,32 +1,43 @@
-<dependencies>
-  <!-- LaunchDarkly Java Server SDK -->
-  <dependency>
-    <groupId>com.launchdarkly</groupId>
-    <artifactId>launchdarkly-java-server-sdk</artifactId>
-    <version>7.9.0</version>
-  </dependency>
-</dependencies>
+import com.launchdarkly.sdk.*;
+import com.launchdarkly.sdk.server.*;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
-import com.launchdarkly.sdk.LDClient;
-import com.launchdarkly.sdk.LDConfig;
-import com.launchdarkly.sdk.LDContext;
+public class LDFlagManager {
 
-public class SimpleFlagCheck {
-  public static void main(String[] args) {
-    // 1. Initialize the client (your SDK key in place of "YOUR_SDK_KEY")
-    LDClient ldClient = new LDClient("YOUR_SDK_KEY", LDConfig.DEFAULT);
+    private static final String LD_SDK_KEY = "YOUR_SDK_KEY";
+    private static final String USER_KEY = "user-123"; // Can be dynamic or user ID
 
-    // 2. Create the *minimal* context (just a unique key, no user attributes)
-    LDContext ctx = LDContext.create("system");
+    private static final String FEATURE_FLAG_KEY = "your-flag-key";
 
-    // 3. Check the flag
-    String flagKey = "my-feature-flag";
-    boolean isOn = ldClient.boolVariation(flagKey, ctx, false);
+    public static void main(String[] args) {
+        boolean result = checkFlagStatusBasedOnTime();
+        System.out.println("Should serve flag: " + result);
+    }
 
-    System.out.println(flagKey + " is " + (isOn ? "ON" : "OFF"));
+    public static boolean checkFlagStatusBasedOnTime() {
+        try (LDClient ldClient = new LDClient(LD_SDK_KEY)) {
 
-    // 4. Close the client when the app shuts down
-    ldClient.close();
-  }
+            // Scheduled time: June 20, 2025, 5:51 AM BST → convert to UTC
+            ZonedDateTime scheduledBST = ZonedDateTime.of(
+                    2025, 6, 20, 5, 51, 0, 0,
+                    ZoneId.of("Europe/London")
+            );
+            Instant scheduledTimeUTC = scheduledBST.toInstant();
+
+            Instant now = Instant.now();
+
+            boolean isAfterTime = now.isAfter(scheduledTimeUTC);
+
+            // Build context with custom attribute
+            LDContext context = LDContext.builder(USER_KEY)
+                    .set("isAfterTime", isAfterTime)
+                    .build();
+
+            // Flag evaluation
+            return ldClient.boolVariation(FEATURE_FLAG_KEY, context, false);
+        }
+    }
 }
