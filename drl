@@ -1,0 +1,70 @@
+import java.util.Arrays;
+import uk.org.fca.gabriel.scs.profile.calculation.domain.FirmRegulatoryInformation;
+import uk.org.fca.gabriel.scs.profile.calculation.domain.Permission;
+import uk.org.fca.gabriel.scs.profile.calculation.rules.DroolConstants;
+
+// Rule 2: Delete future schedules when firm is inactive across 3MLD, PSD/EMD, CBTL & MLR
+rule "Delete Future Schedules Rule 2"
+when
+    $fri: FirmRegulatoryInformation(
+        firmInformation != null,
+        // Firm Status = "Registered"
+        firmInformation.firmStatusName == "Registered",
+        // Sub-Status = "Former 3MLD"
+        firmInformation.firmSubStatus == "Former 3MLD",
+        // 3MLD Status = Formerly… OR Registration Revoked
+        (   firmInformation.threeMldStatus == "Formerly 3MLD Registered"
+         || firmInformation.threeMldStatus == "Registration Revoked" ),
+        // PSD/EMD Status not one of the five active states
+        eval(! Arrays.asList(
+              "Authorised Payment Institution",
+              "Small Payment Institution",
+              "Registered Account Information Service Provider",
+              "Authorised Electronic Money Institution",
+              "Small Electronic Money Institution"
+          ).contains(firmInformation.psdFirmStatusName)),
+        // MLRs Status ≠ "MLRs Registered"
+        firmInformation.mlrStatus != "MLRs Registered"
+    )
+    // Ensure NO Permission whose Activity.cbTLTypeName == "Registered"
+    not Permission(
+        activities.cbTLTypeName == "Registered"
+    ) from $fri.firmInformation.permissions
+then
+    // <-- call your service to delete future schedules
+    RegDataService.deleteFutureSchedules($fri.getFirmInformation().getAccountID());
+end
+
+
+// Rule 3: Mark small-domestic-deposit-taker when PSD/EMD is cancelled but others inactive
+rule "Rule 3 - PSD/EMD Cancelled Status"
+when
+    $fri: FirmRegulatoryInformation(
+        firmInformation != null,
+        // Firm Status = "Registered"
+        firmInformation.firmStatusName == "Registered",
+        // PSD/EMD Status is one of the cancelled/revoked list
+        eval( Arrays.asList(
+            "Cancelled - Authorised PI",
+            "Cancelled - Small PI",
+            "Cancelled - RAISP",
+            "Cancelled - PSD2 Excluded",
+            "PSD Revoked PI",
+            "Cancelled – Authorised EMI",
+            "Cancelled – Small EMI",
+            "EMD Revoked – Authorised EMI",
+            "EMD Revoked – Small EMI"
+        ).contains(firmInformation.psdFirmStatusName)),
+        // 3MLD Status ≠ "3MLD Registered"
+        firmInformation.threeMldStatus != "3MLD Registered",
+        // MLRs Status ≠ "MLRs Registered"
+        firmInformation.mlrStatus != "MLRs Registered"
+    )
+    // Again ensure NO Permission whose Activity.cbTLTypeName == "Registered"
+    not Permission(
+        activities.cbTLTypeName == "Registered"
+    ) from $fri.firmInformation.permissions
+then
+    // <-- whatever outcome you need here
+    masterRuleOutcome.add(DroolConstants.SS_SMALL_DOMESTIC_DEPOSIT_TAKER);
+end
