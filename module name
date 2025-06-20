@@ -1,143 +1,60 @@
+import com.launchdarkly.sdk.LDContext
+import com.launchdarkly.sdk.server.{LDClient, LDClientInterface}
+import java.text.SimpleDateFormat
+import java.util.{Date, Locale}
 
- Format:
+object LaunchDarklyDateToggleWithDebug {
 
-  ```
-  {PREFIX}_{JIRA-ID}_{COMPONENT}_{SCOPE}
-  ```
+  private val SDK_KEY  = "YOUR_SDK_KEY"      // replace with your SDK key
+  private val DATE_FLAG_KEY = "toggle-date-flag"
 
- Prefixes & Lifespans:
+  def main(args: Array[String]): Unit = {
+    val ldClient: LDClientInterface = new LDClient(SDK_KEY)
+    try {
+      // build an anonymous context
+      val context = LDContext.builder("anonymous")
+        .anonymous(true)
+        .build()
 
-   REL (1–6 mo): new feature rollouts
-   OPS (permanent): kill-switches, maintenance
-   EXP (2–8 wk): A/B tests, experiments
-   MIG (3–12 mo): data/system migrations
-   TEMP (≤ 90 days): hotfixes, workarounds
-   BUG (2–4 wk): bug-fix rollouts
+      // 1) fetch the raw date string
+      val rawValue: String = ldClient.stringVariation(DATE_FLAG_KEY, context, null)
+      println(s"▶ Raw '$DATE_FLAG_KEY' value: $rawValue")
 
- Scopes:
-  `dev`, `test`, `canary`, `prod`, `internal`, `all`
-  (Extend for regions: e.g. `prod-us`)
+      // 2) parse the date (if present)
+      val (targetDateOpt, parseErrorOpt) = Option(rawValue).filterNot(_.equalsIgnoreCase("null")) match {
+        case Some(s) =>
+          try {
+            val fmt = new SimpleDateFormat("dd-MM-yyyy", Locale.getDefault)
+            fmt.setLenient(false)
+            (Some(fmt.parse(s)), None)
+          } catch {
+            case e: Exception =>
+              (None, Some(e))
+          }
+        case None =>
+          (None, None)
+      }
 
- Quick Checklist:
+      targetDateOpt.foreach(d => println(s"▶ Parsed target date: $d"))
+      parseErrorOpt.foreach(e => println(s"⚠️ Date parse error: ${e.getMessage}"))
 
-   ✅ Uppercase prefix & JIRA-ID; lowercase kebab-case component & scope
-   ✅ Valid JIRA ticket exists
-   ✅ ≤ 60 chars, no spaces/special chars
+      // 3) compare to now
+      val now = new Date()
+      println(s"▶ Current date/time:  $now")
 
+      val isActive = targetDateOpt match {
+        case Some(target) => !now.before(target)
+        case None         => false
+      }
+      println(s"▶ Is feature active? $isActive")
 
- Examples:
+      // 4) dump **all** flags for this context
+      val flagsState = ldClient.allFlagsState(context)
+      println("\n===== ALL FLAGS STATE =====")
+      println(flagsState.toJson)  
 
-   REL-REG-321-scs-processtrackingbatchstartprocess-all
-   BUG-REG-322-workflow-integrationprocess-stepfunction-all
-   
-   
-   TAGS should add compulsory here 
-   jira:<ID>, module:<name>, team:<owner>, expiry:<YYYY-MM-DD>, type:<release|experiment|bugfix|ops>.
-   
-   
-   
-   
-   
-LaunchDarkly Roles & Permissions (Easy Reference)
-
----
-
- 1. Administrator
-
-Environments: Dev, Sit, Bat, NFT, ITE, Prod
-Can:
-
- Create and edit flags & their variations
- Build targeting rules (who sees what)
- Turn flags on or off
- Schedule automatic rollouts at specific times
- Archive or delete old flags
- Create and manage user segments
- Configure environments (add/remove)
- View and export all logs and flag-usage data
-
----
-
- 2. Flag Owner
-
-Environments: Dev, Sit, Bat, NFT, ITE, Prod
-Can:
-
- Create and edit flags (name, description, variations)
- Define and update targeting rules
- Toggle flags on/off
- Schedule or automate rollouts
- Archive flags when they’re no longer needed
- View logs and usage metrics for their flags
-
----
-
- 3. DevOps / UI Team
-
-Environments: Dev, Sit, Bat
-Can:
-
- Create new flags
- Edit flag settings (names, descriptions, rules)
- Toggle flags on/off in non-production environments
- Create and manage user segments in non-prod
- View logs and metrics for troubleshooting
-
----
-
- 4. Developer
-
-Environments: Dev, Sit, Bat
-Can:
-
- Create flags (key, name, description)
- View flag configurations and usage metrics
- View existing user segments
- View logs
-
----
-
- 5. SME & AEM Teams
-
-Environments: Dev, Sit, Bat
-Can:
-
- Turn flags on or off
- View flag configurations, rules, and metrics
- View logs
-
----
-
- 6. CI/CD & Chatbot Service Accounts
-
-Environments: Dev, Sit, Bat
-Can:
-
- Toggle flags via API or webhook
- Schedule rollouts programmatically
- View flags and segments
-
----
-
- 7. View-Only Stakeholders
-
-Environments: Dev, Sit, Bat
-Can:
-
- View flag definitions and metadata
- View usage metrics and dashboards
- View audit logs
-
----
-
- 8. Auditors & Compliance
-
-Environments: Dev, Sit, Bat
-Can:
-
- View flags and segments
- View and export full change history and metadata
- Generate compliance reports via the LaunchDarkly API
-
----
-
+    } finally {
+      ldClient.close()
+    }
+  }
+}
