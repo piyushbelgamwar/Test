@@ -12,3 +12,14 @@
     </plugin>
   </plugins>
 </build>
+<dependency>
+  <groupId>com.thoughtworks.xstream</groupId>
+  <artifactId>xstream</artifactId>
+  <version>1.4.18</version>
+  <!-- leave default (compile) scope so tests see it -->
+</dependency>
+<dependency>
+  <groupId>org.codehaus.woodstox</groupId>
+  <artifactId>woodstox-core-asl</artifactId>
+  <version>4.4.1</version>
+</dependency>
