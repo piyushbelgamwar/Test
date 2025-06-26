@@ -1,60 +1,99 @@
-import com.launchdarkly.sdk.LDContext
-import com.launchdarkly.sdk.server.{LDClient, LDClientInterface}
-import java.text.SimpleDateFormat
-import java.util.{Date, Locale}
+package com.feature.flag.poc.launchdarkly.autoconfig;
 
-object LaunchDarklyDateToggleWithDebug {
+import com.launchdarkly.sdk.LDContext;
+import com.launchdarkly.sdk.server.LDClient;
+import org.springframework.stereotype.Component;
+import org.springframework.core.env.Environment;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.bind.Bindable;
 
-  private val SDK_KEY  = "YOUR_SDK_KEY"      // replace with your SDK key
-  private val DATE_FLAG_KEY = "toggle-date-flag"
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 
-  def main(args: Array[String]): Unit = {
-    val ldClient: LDClientInterface = new LDClient(SDK_KEY)
-    try {
-      // build an anonymous context
-      val context = LDContext.builder("anonymous")
-        .anonymous(true)
-        .build()
+import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Arrays;
+import java.util.concurrent.ConcurrentHashMap;
 
-      // 1) fetch the raw date string
-      val rawValue: String = ldClient.stringVariation(DATE_FLAG_KEY, context, null)
-      println(s"▶ Raw '$DATE_FLAG_KEY' value: $rawValue")
+/**
+ * Single-class Spring component that loads SDK keys from properties,
+ * initializes the LaunchDarkly client, and provides cached flag checks.
+ */
+@Component
+public class LaunchDarklyFlagClient {
 
-      // 2) parse the date (if present)
-      val (targetDateOpt, parseErrorOpt) = Option(rawValue).filterNot(_.equalsIgnoreCase("null")) match {
-        case Some(s) =>
-          try {
-            val fmt = new SimpleDateFormat("dd-MM-yyyy", Locale.getDefault)
-            fmt.setLenient(false)
-            (Some(fmt.parse(s)), None)
-          } catch {
-            case e: Exception =>
-              (None, Some(e))
-          }
-        case None =>
-          (None, None)
-      }
+    private final Environment environment;
+    private final Map<String, String> sdkKeys;
 
-      targetDateOpt.foreach(d => println(s"▶ Parsed target date: $d"))
-      parseErrorOpt.foreach(e => println(s"⚠️ Date parse error: ${e.getMessage}"))
+    private LDClient ldClient;
+    private final LDContext context =
+            LDContext.builder("launchdarkly-flag-client").anonymous(true).build();
 
-      // 3) compare to now
-      val now = new Date()
-      println(s"▶ Current date/time:  $now")
+    private final ConcurrentHashMap<String, Boolean> cache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> dateCache = new ConcurrentHashMap<>();
+    private final SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy");
 
-      val isActive = targetDateOpt match {
-        case Some(target) => !now.before(target)
-        case None         => false
-      }
-      println(s"▶ Is feature active? $isActive")
-
-      // 4) dump **all** flags for this context
-      val flagsState = ldClient.allFlagsState(context)
-      println("\n===== ALL FLAGS STATE =====")
-      println(flagsState.toJson)  
-
-    } finally {
-      ldClient.close()
+    public LaunchDarklyFlagClient(Environment environment) {
+        this.environment = environment;
+        // Bind all properties under launchdarkly.sdk-keys.* into a Map<String,String>
+        this.sdkKeys = Binder.get(environment)
+                .bind("launchdarkly.sdk-keys", Bindable.mapOf(String.class, String.class))
+                .orElse(new HashMap<>());
     }
-  }
+
+    @PostConstruct
+    public void initClient() {
+        // Determine active profile or default
+        String profile = Arrays.stream(environment.getActiveProfiles())
+                .findFirst()
+                .orElse("default");
+        String sdkKey = sdkKeys.getOrDefault(profile, sdkKeys.get("default"));
+        if (sdkKey == null || sdkKey.isBlank()) {
+            throw new IllegalStateException(
+                    "No LaunchDarkly SDK key for profile '" + profile + "'");
+        }
+        this.ldClient = new LDClient(sdkKey);
+    }
+
+    @PreDestroy
+    public void shutdown() throws IOException {
+        if (ldClient != null) {
+            ldClient.close();
+        }
+    }
+
+    /**
+     * Fetches the boolean flag, caches result; on error returns last cached or false.
+     */
+    public boolean isEnabled(String flagKey) {
+        try {
+            boolean value = ldClient.boolVariation(flagKey, context, false);
+            cache.put(flagKey, value);
+            return value;
+        } catch (Exception e) {
+            return cache.getOrDefault(flagKey, false);
+        }
+    }
+
+    /**
+     * Checks a date-based flag ("dd-MM-yyyy") and caches result; on error returns last cached or false.
+     */
+    public boolean isFeatureEnabled(String flagKey) {
+        try {
+            String val = ldClient.stringVariation(flagKey, context, null);
+            if (val == null) {
+                dateCache.put(flagKey, false);
+                return false;
+            }
+            Date target = dateFormat.parse(val);
+            boolean enabled = new Date().compareTo(target) >= 0;
+            dateCache.put(flagKey, enabled);
+            return enabled;
+        } catch (Exception e) {
+            return dateCache.getOrDefault(flagKey, false);
+        }
+    }
 }
