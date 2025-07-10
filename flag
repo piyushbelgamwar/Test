@@ -1,135 +1,67 @@
-Sure, Piyush! Here’s the updated LaunchDarkly Feature Flag Creation SOP — with all references to “solo” removed. This version is clean, professional, and image-ready for onboarding or internal documentation:
+
+Absolutely! Here’s the full, updated and consolidated process for Creating a Dummy FRN in the Dev Environment for Testing, incorporating all your changes and instructions:
 
 ⸻
 
-🚩 LaunchDarkly Feature Flag Creation SOP
+✅ Creating a Dummy FRN in the Dev Environment for Testing
 
-For Boolean & String Flags with Custom Variations
-
-⸻
-
-✅ Objective
-
-This SOP guides developers and testers to create a feature flag in LaunchDarkly manually — with Boolean or String types — and explains how to define and update variations properly.
+Use the following step-by-step process to create and validate a dummy FRN (Firm Reference Number) in the Dev environment for internal testing purposes:
 
 ⸻
 
-🔹 Step 1: Login to LaunchDarkly
-	•	Navigate to: https://app.launchdarkly.com
-	•	Sign in using your company SSO or credentials.
+🔍 Step 1: Check if FRN Already Exists
 
-📸 Image 1: LaunchDarkly Login Screen or Homepage
+Before initiating the process, confirm that the FRN is not already present in the system by querying the following backend tables:
+	•	meta_firms
+	•	master_firms
+	•	regulated_firms
 
-⸻
-
-🔹 Step 2: Select Project & Environment
-	•	From the left sidebar, select your Project
-	•	Then choose the appropriate Environment (dev, sit, prod, etc.)
-
-📸 Image 2: Dropdown showing Projects and Environments
+Use SQL or any data inspection tool to confirm the absence of the FRN (e.g., 122158). Only proceed if the FRN does not exist in any of the above tables.
 
 ⸻
 
-🔹 Step 3: Click on “Create Flag”
-	•	Click on Feature Flags in the sidebar
-	•	Select ➕ Create new flag
-
-📸 Image 3: “Create New Flag” button in Feature Flags
-
-⸻
-
-🔹 Step 4: Enter Flag Details
-
-Fill the following fields:
-
-Field	Example
-Name	rel-REG-123-feature-toggle
-Key	rel-REG-123-feature-toggle
-Flag Type	Select Custom
-Description	Purpose of the flag (optional)
-
-📸 Image 4: Flag creation form with fields highlighted
+🚀 Step 2: Trigger the EMR Pipeline via Jenkins (Step 1.1)
+	1.	Open Jenkins.
+	2.	Locate and run the EMR pipeline for Step 1.1 (the firm ingestion process).
+	3.	Ensure the environment is set to dev.
+	4.	This action will spin up an EMR cluster on AWS to begin processing the firm data.
 
 ⸻
 
-🔹 Step 5: Choose Flag Type
-
-1️⃣ Boolean Flag
-	•	Choose this for ON/OFF switches
-	•	Default variations:
-	•	true = Enabled
-	•	false = Disabled
-
-📸 Image 5A: Boolean flag variation setup
+🧾 Step 3: Upload the FRN JSON File to S3
+	1.	Prepare a JSON file containing dummy FRN data.
+	2.	Upload it to the following S3 path:
+s3://dcp-dev-system-batch-s3/firm_permission/data/
+	3.	Once uploaded, it will automatically trigger Step 1.1 for ingestion.
 
 ⸻
 
-2️⃣ String Flag
-	•	Use when you need named or formatted values (e.g., "25-03-2025", "beta", "A", "control")
-	•	Examples:
-	•	"enabled" / "disabled"
-	•	"25-03-2025" for rollout date
-	•	"v1" / "v2" for variant control
-
-📸 Image 5B: String flag with custom values
-
-⸻
-
-🔹 Step 6: Set Targeting & Default Rule
-	•	You can skip targeting for now, or configure it by:
-	•	User attributes (email, key, group)
-	•	Segments (internal users, beta testers)
-	•	Select a default variation to serve when no rule matches
-
-📸 Image 6: Targeting rules section with “serve variation” selector
+✅ Step 4: Initial Verification in dcp-internal
+	1.	Open https://dev-internal.regdata.fca.org.uk.
+	2.	Navigate via:
+	•	Firm & User Administration → Firm Administration → Firm Profile
+	•	Or use Search Firm by entering the FRN (e.g., 122158).
+	3.	✅ Important: After Step 1.1 runs successfully, you will be able to search and find the firm, but:
+	•	The Firm Profile will appear empty — no characteristics or values will be shown at this point.
+	•	This is expected and indicates Step 1.2 still needs to be executed.
 
 ⸻
 
-🔹 Step 7: Add Required Tags
-
-Make sure to tag the flag for traceability:
-
-jira:REG-123, module:registration, team:identity-platform, type:release
-
-📸 Image 7: Tags input with values filled in
-
-⸻
-
-🔹 Step 8: Save and Enable the Flag
-	•	Click Save Flag
-	•	Use the toggle switch per environment (dev, sit, prod) to turn it ON or OFF
-
-📸 Image 8: Flag toggle switch across environments
-
-⸻
-
-✏️ Updating Variations After Creation
-
-To modify an existing flag:
-	1.	Go to the flag
-	2.	Click the Settings or Variations tab
-	3.	You can:
-	•	Rename or update variation values
-	•	Add new variations (if applicable)
-	•	Adjust default variation
-	•	Modify targeting logic
-
-📸 Image 9: Editing variation values in an existing flag
+⚙️ Step 5: Run Step 1.2 from Jenkins and Check EMR Status
+	1.	Go to Jenkins and find the pipeline job for Step 1.2 (enrichment phase).
+	2.	Trigger the Step 1.2 pipeline with the correct environment (dev).
+	3.	After triggering, go to the Amazon EMR console and confirm:
+	•	The cluster/job has been initialized
+	•	The job completes without error
+	4.	Once Step 1.2 is successful:
+	•	Return to the Firm Profile screen in dcp-internal
+	•	You should now see:
+	•	✅ Access to Cash ATM = true
+	•	✅ Appointed Reps = true
+	•	✅ Appointed Reps Reporting = true
+	•	✅ Effective Date: 31/07/1925 to 31/07/2125
+	•	✅ Firm Status: Enabled
 
 ⸻
 
-🧠 What is a Variation?
-
-Type	Example Values	Use Case
-Boolean	true / false	Show or hide a feature
-String	"25-03-2025", "v1"	Date-based logic or variant toggling
-
-
-⸻
-
-Let me know if you’d like:
-	•	🔗 A Notion/Confluence version
-	•	📄 A downloadable Word/PDF file
-	•	📸 Help generating the annotated images
-
-I can help build that as well.
+Let me know if you’d like this converted into a Word or PDF document for your internal documentation or onboarding purposes!
