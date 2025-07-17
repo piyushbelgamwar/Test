@@ -1,73 +1,767 @@
-// Rule 2: Delete future schedules for firms that have left 3MLD and are not any form of PI/EMI via PSD or EMD
-rule "Delete Future RegData Schedules for Former 3MLD"
+package rulesREP008_v4;
+
+import java.util.List;
+import java.util.ArrayList;
+
+import uk.org.fca.gabriel.sca.rep.rep008.v4.utility.*;
+import uk.org.fca.gabriel.common.domain.ErrorMessage;
+import uk.org.fca.gabriel.common.domain.FirmDataItem;
+import uk.org.fca.gabriel.common.domain.SubmitRequest;
+import uk.org.fca.gabriel.common.domain.ValidationError;
+import uk.org.fca.gabriel.common.domain.ValidationErrorResponse;
+import uk.org.fca.gabriel.sca.rep.rep008.v4.domain.*;
+import uk.org.fca.gabriel.common.utility.ValidationMessages;
+import uk.org.fca.gabriel.sca.rep.common.CommonUtility;
+import uk.org.fca.gabriel.sca.rep.common.REPConstants;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Collections;
+import uk.org.fca.gabriel.common.domain.FirmProfile;
+import uk.org.fca.gabriel.sca.rep.common.FeatureToggle;
+
+global List<ValidationError> validationErrors;
+global ValidationMessages validationMessages;
+
+// RULE “1” - DELETED (was for nil return file attachment restriction)
+
+rule “2”
 when
-    $fri: FirmRegulatoryInformation(
-        firmInformation != null,
-        firmInformation.firmStatusName == "Registered",
-        firmInformation.firmSubStatus  == "Former 3MLD",
-        (firmInformation.threeMldStatus == "Formerly 3MLD Registered" ||
-         firmInformation.threeMldStatus == "Registration Revoked"),
-        // Neither PSD nor EMD is any of the authorised/small institutions
-        eval(
-          !java.util.Arrays.asList(
-              "Authorised Payment Institution",
-              "Small Payment Institution",
-              "Registered Account Information Service Provider",
-              "Authorised Electronic Money Institution",
-              "Small Electronic Money Institution"
-          ).contains(firmInformation.psdStatus)
-          ||
-          !java.util.Arrays.asList(
-              "Authorised Payment Institution",
-              "Small Payment Institution",
-              "Registered Account Information Service Provider",
-              "Authorised Electronic Money Institution",
-              "Small Electronic Money Institution"
-          ).contains(firmInformation.emdStatus)
-        ),
-        firmInformation.cbtlStatus != "Registered",
-        firmInformation.mlrStatus  != "MLRs Registered"
-    )
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
 then
-    MyRegDataService.deleteFutureSchedules($fri.getFirmReferenceNumber());
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.”;
+String parentA=“REP008-NotificationOfDisciplinaryAction.Notification.A_”;
+String parentB=“REP008-NotificationOfDisciplinaryAction.Notification.B_”;
+String parentC=“REP008-NotificationOfDisciplinaryAction.Notification.C_”;
+String parentD=“REP008-NotificationOfDisciplinaryAction.Notification.D_”;
+String parentE=“REP008-NotificationOfDisciplinaryAction.Notification.E_”;
+String parentF=“REP008-NotificationOfDisciplinaryAction.Notification.F_”;
+String parentG=“REP008-NotificationOfDisciplinaryAction.Notification.G_”;
+String parentH=“REP008-NotificationOfDisciplinaryAction.Notification.H_”;
+String parentI=“REP008-NotificationOfDisciplinaryAction.Notification.I_”;
+String parentJ=“REP008-NotificationOfDisciplinaryAction.Notification.J_”;
+String parentK=“REP008-NotificationOfDisciplinaryAction.Notification.K_”;
+String parentL=“REP008-NotificationOfDisciplinaryAction.Notification.L_”;
+String parentM=“REP008-NotificationOfDisciplinaryAction.Notification.M_”;
+String element=””;
+
+```
+if($notificationList.getNotification()!=null){
+    for(int i=0;i<$notificationList.getNotification().size();i++){
+        boolean emptyFlag =$notificationList.getNotification().get(i).rowLevelMandatory();
+        if(emptyFlag==false){
+                    check=true;
+                      if(element=="")
+                        element=parentA+i+","+parentB+i+","+parentC+i+","+parentD+i+","+parentE+i+","+parentF+i+","+parentG+i+","+parentH+i+","+parentI+i+","+parentJ+i+"_"+i+","+parentK+i+"_"+i+","+parentL+i+","+parentM+i;
+                      else
+                       element=element+","+parentA+i+","+parentB+i+","+parentC+i+","+parentD+i+","+parentE+i+","+parentF+i+","+parentG+i+","+parentH+i+","+parentI+i+","+parentJ+i+"_"+i+","+parentK+i+"_"+i+","+parentL+i+","+parentM+i+",";
+                    }
+    }
+}else{
+    check = true;
+    element=parentA+0+","+parentB+0+","+parentC+0+","+parentD+0+","+parentE+0+","+parentF+0+","+parentG+0+","+parentH+0+","+parentI+0+","+parentJ+0+"_"+0+","+parentK+0+"_"+0+","+parentL+0+","+parentM+0;
+}
+
+if(check==true){
+    ValidationError error = new ValidationError("Validation",element,"2", validationMessages.getERR0050("At least one row must be completed"));
+    validationErrors.add(error);
+}
+end
+```
+
+rule “2_1”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String element=””;
+String parentA=“REP008-NotificationOfDisciplinaryAction.Notification.A_”;
+String parentB=“REP008-NotificationOfDisciplinaryAction.Notification.B_”;
+String parentC=“REP008-NotificationOfDisciplinaryAction.Notification.C_”;
+String parentD=“REP008-NotificationOfDisciplinaryAction.Notification.D_”;
+String parentE=“REP008-NotificationOfDisciplinaryAction.Notification.E_”;
+String parentF=“REP008-NotificationOfDisciplinaryAction.Notification.F_”;
+String parentG=“REP008-NotificationOfDisciplinaryAction.Notification.G_”;
+String parentH=“REP008-NotificationOfDisciplinaryAction.Notification.H_”;
+String parentI=“REP008-NotificationOfDisciplinaryAction.Notification.I_”;
+String parentJ=“REP008-NotificationOfDisciplinaryAction.Notification.J_”;
+String parentK=“REP008-NotificationOfDisciplinaryAction.Notification.K_”;
+String parentL=“REP008-NotificationOfDisciplinaryAction.Notification.L_”;
+String parentM=“REP008-NotificationOfDisciplinaryAction.Notification.M_”;
+
+```
+if($notificationList.getNotification()!=null){
+    for(int i=0;i<$notificationList.getNotification().size();i++){
+        boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+        boolean emptyFlag = $notificationList.getNotification().get(i).mandatoryCondition1();
+
+        System.out.println("2_1 row level emptyFlagRowMandatory ="+emptyFlagRowMandatory+" emptyFlag = "+emptyFlag);
+        // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+        if(emptyFlag==true && emptyFlagRowMandatory==true){
+            check=true;
+            if(element=="")
+                element=parentA+i+","+parentB+i+","+parentC+i+","+parentD+i+","+parentE+i+","+parentF+i+","+parentG+i+","+parentH+i+","+parentI+i+","+parentJ+i+","+parentK+i+","+parentL+i+","+parentM+i;
+            else
+                element=element+","+parentA+i+","+parentB+i+","+parentC+i+","+parentD+i+","+parentE+i+","+parentF+i+","+parentG+i+","+parentH+i+","+parentI+i+","+parentJ+i+","+parentK+i+","+parentL+i+","+parentM+i+",";
+        }
+    }
+}
+
+if(check==true){
+    ValidationError error = new ValidationError("Validation",element,"2", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+    validationErrors.add(error);
+}
+end
+```
+
+rule “2_2”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String element=””;
+String parentJ=“REP008-NotificationOfDisciplinaryAction.Notification.J_”;
+String parentK=“REP008-NotificationOfDisciplinaryAction.Notification.K_”;
+String parentL=“REP008-NotificationOfDisciplinaryAction.Notification.L_”;
+String parentM=“REP008-NotificationOfDisciplinaryAction.Notification.M_”;
+
+```
+if($notificationList.getNotification()!=null){
+    for(int i=0;i<$notificationList.getNotification().size();i++){
+        boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+        boolean emptyFlag = $notificationList.getNotification().get(i).mandatoryCondition2();
+        System.out.println("$notificationList.getNotification().get(i)"+$notificationList.getNotification().get(i).toString());
+        System.out.println("2_2 emptyFlagRowMandatory" +emptyFlagRowMandatory +"2_2 emptyFlag "+emptyFlag);
+        // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+        if(emptyFlagRowMandatory==true && emptyFlag==true){
+            check=true;
+            if(element=="")
+                element=parentJ+i+","+parentK+i+","+parentL+i+","+parentM+i;
+            else
+                element=element+parentJ+i+","+parentK+i+","+parentL+i+","+parentM+i+",";
+        }
+    }
+}
+
+if(check==true){
+    ValidationError error = new ValidationError("Validation",element,"2", validationMessages.getERR0050("if row is completed, the significant-harm function indicator, conduct rule, information about the breach, and the actions taken are mandatory"));
+    validationErrors.add(error);
+}
+end
+```
+
+rule “2A-ifRowCompleted”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.Title.”;
+String element=””;
+
+if($notificationList.getNotification()!=null){
+for(int i=0;i<$notificationList.getNotification().size();i++){
+boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+boolean titleNullRowMAndatory =$notificationList.getNotification().get(i).rowLevelMandatoryFor1A();
+System.out.println(”——titleNullRowMAndatory    “+titleNullRowMAndatory);
+// REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase(“no”) &&
+if(emptyFlagRowMandatory==true && titleNullRowMAndatory==true){
+check=true;
+if(element==””)
+element=parent+i;
+else
+element=element+”,”+parent+i;
+}
+}
+}
+
+if(check==true){
+ValidationError error = new ValidationError(“Validation”,element,“2A”, validationMessages.getERR0050(“if row is completed, title, name and one form of identification are mandatory”));
+validationErrors.add(error);
+}
 end
 
-// Rule 3: Handle firms with cancelled PSD or EMD but not 3MLD, CBTL or MLR registered
-rule "Handle Cancelled PSD/EMD Firms"
+rule “2B-ifRowCompleted”
 when
-    $fri: FirmRegulatoryInformation(
-        firmInformation != null,
-        firmInformation.firmStatusName == "Registered",
-        // Either PSD or EMD is one of the cancelled states
-        eval(
-          java.util.Arrays.asList(
-            "Cancelled - Authorised PI",
-            "Cancelled - Small PI",
-            "Cancelled - RAISP",
-            "Cancelled - PSD2 Excluded",
-            "PSD Revoked PI",
-            "Cancelled – Authorised EMI",
-            "Cancelled – Small EMI",
-            "EMD Revoked – Authorised EMI",
-            "EMD Revoked – Small EMI"
-          ).contains(firmInformation.psdStatus)
-          ||
-          java.util.Arrays.asList(
-            "Cancelled - Authorised PI",
-            "Cancelled - Small PI",
-            "Cancelled - RAISP",
-            "Cancelled - PSD2 Excluded",
-            "PSD Revoked PI",
-            "Cancelled – Authorised EMI",
-            "Cancelled – Small EMI",
-            "EMD Revoked – Authorised EMI",
-            "EMD Revoked – Small EMI"
-          ).contains(firmInformation.emdStatus)
-        ),
-        firmInformation.threeMldStatus != "3MLD Registered",
-        firmInformation.cbtlStatus   != "Registered",
-        firmInformation.mlrStatus    != "MLRs Registered"
-    )
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
 then
-    masterRuleOutcome.add(DroolConstants.CANCELLED_PSD_EMD_FIRM);
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.Surname.”;
+String element=””;
+
+if($notificationList.getNotification()!=null){
+for(int i=0;i<$notificationList.getNotification().size();i++){
+boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+boolean SurnameNullRowMAndatory =$notificationList.getNotification().get(i).rowLevelMandatoryFor2B();
+// REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase(“no”) &&
+if(emptyFlagRowMandatory==true && SurnameNullRowMAndatory==true){
+check=true;
+if(element==””)
+element=parent+i;
+else
+element=element+”,”+parent+i;
+}
+}
+}
+
+if(check==true){
+ValidationError error = new ValidationError(“Validation”,element,“2B”, validationMessages.getERR0050(“if row is completed, title, name and one form of identification are mandatory”));
+validationErrors.add(error);
+}
 end
+
+rule “2C-ifRowCompleted”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.Forename.”;
+String element=””;
+
+if($notificationList.getNotification()!=null){
+for(int i=0;i<$notificationList.getNotification().size();i++){
+boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+boolean foreNameNullRowMAndatory =$notificationList.getNotification().get(i).rowLevelMandatoryFor2C();
+System.out.println(“2C row mandatory=”+$notificationList.getNotification().get(i));
+// REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase(“no”) &&
+if(emptyFlagRowMandatory==true && foreNameNullRowMAndatory==true){
+check=true;
+if(element==””)
+element=parent+i;
+else
+element=element+”,”+parent+i;
+}
+}
+}
+
+if(check==true){
+ValidationError error = new ValidationError(“Validation”,element,“2C”, validationMessages.getERR0050(“if row is completed, title, name and one form of identification are mandatory”));
+validationErrors.add(error);
+}
+end
+
+rule “2D”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.IRN.”;
+String element=””;
+
+```
+    if($notificationList.getNotification()!=null){
+        for(int i=0;i<$notificationList.getNotification().size();i++){
+            if(($notificationList.getNotification().get(i).getIRN()!=null && !$notificationList.getNotification().get(i).getIRN().isEmpty()) && (($notificationList.getNotification().get(i).getDOB()!=null && !$notificationList.getNotification().get(i).getDOB().isEmpty() ) || ($notificationList.getNotification().get(i).getNI()!=null && !$notificationList.getNotification().get(i).getNI().isEmpty()) 
+                || ($notificationList.getNotification().get(i).getPassport()!=null && !$notificationList.getNotification().get(i).getPassport().isEmpty())  || ($notificationList.getNotification().get(i).getNationality()!=null && !$notificationList.getNotification().get(i).getNationality().isEmpty()))){
+                         check=true;
+                        if(element=="")
+                        element=parent+i;
+                        else
+                        element=element+","+parent+i;
+            }
+        }
+    }
+    
+  if(check==true){
+        ValidationError error = new ValidationError("Validation",element,"2D", validationMessages.getERR0050("if the IRN is entered then the Date of birth, NI number, Passport number and Nationality must be left blank"));
+         validationErrors.add(error);
+}
+end
+```
+
+rule “2E”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.DOB.”;
+String element=””;
+
+```
+    if($notificationList.getNotification()!=null){
+        for(int i=0;i<$notificationList.getNotification().size();i++){
+            boolean anyOneFieldNotNullFlag =$notificationList.getNotification().get(i).rowLevelMandatory();
+            // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+            if(anyOneFieldNotNullFlag==true) {
+                if(($notificationList.getNotification().get(i).getIRN()==null || $notificationList.getNotification().get(i).getIRN().isEmpty()) && 
+                (($notificationList.getNotification().get(i).getDOB()==null || $notificationList.getNotification().get(i).getDOB().isEmpty() ))){
+                             check=true;
+                            if(element=="")
+                            element=parent+i;
+                            else
+                            element=element+","+parent+i;
+                }
+            }
+        }
+    }
+    
+  if(check==true){
+        ValidationError error = new ValidationError("Validation",element,"2E", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+         validationErrors.add(error);
+}
+end
+```
+
+rule “2F”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.NI.”;
+String element=””;
+
+```
+        if($notificationList.getNotification()!=null){
+            for(int i=0;i<$notificationList.getNotification().size();i++){
+                if(($notificationList.getNotification().get(i).getDOB()!=null && !$notificationList.getNotification().get(i).getDOB().isEmpty()) && (($notificationList.getNotification().get(i).getNI()==null || $notificationList.getNotification().get(i).getNI().isEmpty()) 
+                    && (($notificationList.getNotification().get(i).getPassport()==null || $notificationList.getNotification().get(i).getPassport().isEmpty())  || ($notificationList.getNotification().get(i).getNationality()==null || $notificationList.getNotification().get(i).getNationality().isEmpty())))){
+                           check=true;
+                            if(element=="")
+                            element=parent+i;
+                            else
+                            element=element+","+parent+i;
+                }
+            }
+        }
+        
+      if(check==true){
+             ValidationError error = new ValidationError("Validation",element,"2F", validationMessages.getERR0050("If Date of birth is entered then the NI number or Passport number and Nationality must be completed"));
+             validationErrors.add(error);
+    }
+end
+```
+
+rule “2G”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.Passport.”;
+String element=””;
+
+```
+    if($notificationList.getNotification()!=null){
+        for(int i=0;i<$notificationList.getNotification().size();i++){
+           if(($notificationList.getNotification().get(i).getDOB()!=null && !$notificationList.getNotification().get(i).getDOB().isEmpty())){
+               if($notificationList.getNotification().get(i).getNI()!=null && !$notificationList.getNotification().get(i).getNI().isEmpty()){
+               }else{
+                   if(($notificationList.getNotification().get(i).getNI()==null || $notificationList.getNotification().get(i).getNI().isEmpty()) 
+                               && ($notificationList.getNotification().get(i).getPassport()==null || $notificationList.getNotification().get(i).getPassport().isEmpty()) 
+                               || ($notificationList.getNotification().get(i).getNationality()==null || $notificationList.getNotification().get(i).getNationality().isEmpty())){
+                                            check=true;
+                                           if(element=="")
+                                           element=parent+i;
+                                           else
+                                           element=element+","+parent+i;
+                               }
+               }
+           }
+        }
+    }
+    
+  if(check==true){
+        ValidationError error = new ValidationError("Validation",element,"2G", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+         validationErrors.add(error);
+}
+end
+```
+
+rule “2H”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.Nationality.”;
+String element=””;
+
+```
+    if($notificationList.getNotification()!=null){
+        for(int i=0;i<$notificationList.getNotification().size();i++){
+           if(($notificationList.getNotification().get(i).getPassport()!=null && !$notificationList.getNotification().get(i).getPassport().isEmpty()) && ($notificationList.getNotification().get(i).getNationality()==null || $notificationList.getNotification().get(i).getNationality().isEmpty())){
+                         check=true;
+                        if(element=="")
+                        element=parent+i;
+                        else
+                        element=element+","+parent+i;
+            }
+        }
+    }
+    
+  if(check==true){
+        ValidationError error = new ValidationError("Validation",element,"2H", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+         validationErrors.add(error);
+}
+end
+```
+
+rule “2I”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.JobPositionDeptDiv.”;
+String element=””;
+
+```
+    if($notificationList.getNotification()!=null){
+        for(int i=0;i<$notificationList.getNotification().size();i++){
+            boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+            System.out.println("**2I emptyFlagRowMandatory -> "+emptyFlagRowMandatory);
+            // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+            if(emptyFlagRowMandatory==true) {
+                   if(($notificationList.getNotification().get(i).getJobPositionDeptDiv()==null || $notificationList.getNotification().get(i).getJobPositionDeptDiv().isEmpty())){
+                                 check=true;
+                                if(element=="")
+                                element=parent+i;
+                                else
+                                element=element+","+parent+i;
+                    }
+            }
+        }
+    }
+
+  if(check==true){
+        ValidationError error = new ValidationError("Validation",element,"2I", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+         validationErrors.add(error);
+}
+```
+
+end
+
+rule “2J_1R”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.RiskTaker.”;
+String element=””;
+int count=0;
+ArrayList<RiskTaker> riskTakerMap = new ArrayList<RiskTaker>();
+
+```
+            if($notificationList.getNotification()!=null) {
+               for(int i=0;i<$notificationList.getNotification().size();i++) {
+                   if($notificationList.getNotification().get(i).getRiskTaker()!= null && !$notificationList.getNotification().get(i).getRiskTaker().isEmpty() ) {
+                           for(int j=0;j<$notificationList.getNotification().get(i).getRiskTaker().size();j++){
+                               if($notificationList.getNotification().get(i).getRiskTaker().get(j)!=null && !$notificationList.getNotification().get(i).getRiskTaker().get(j).equals("")){
+                                    riskTakerMap.add($notificationList.getNotification().get(i).getRiskTaker().get(j));
+                                    System.out.println("Risktaker mapp Added : " + i + "   " + j + "  " + $notificationList.getNotification().get(i).getRiskTaker().get(j));
+                                }
+                            }
+
+                  for(int k=0;k<$notificationList.getNotification().get(i).getRiskTaker().size();k++) {
+                           if ((riskTakerMap.contains(RiskTaker.STANDARD_NON_EXECUTIVE_DIRECTOR) || riskTakerMap.contains(RiskTaker.NOT_APPLICABLE)) && riskTakerMap.size() > 1) {
+                                count++;
+                                 if(element=="")
+                                    element=parent+i+"."+k;
+                                else{
+                                    element=element+","+parent+i+"."+k;
+                                    System.out.println(" Element name is :"+ element);
+                                   }
+                            }
+                       }
+                  }
+                           riskTakerMap.clear();
+               }
+            }
+            
+          if(count >=1){
+                  ValidationError error = new ValidationError("Validation",element,"2J", validationMessages.getERR0050("If 'Standard non-executive director' or 'Not applicable' is selected, then a significant harm function should not be selected"));
+                  validationErrors.add(error);
+            }
+ end
+```
+
+rule “2J_null”
+when
+rep0082Jvalue:  SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.RiskTaker.”;
+String element=””;
+
+```
+        if($notificationList.getNotification()!=null){
+            for(int i=0;i<$notificationList.getNotification().size();i++){
+                boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+                // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+                if(emptyFlagRowMandatory==true && $notificationList.getNotification().get(i) != null && $notificationList.getNotification().get(i).getRiskTaker() != null && !$notificationList.getNotification().get(i).getRiskTaker().isEmpty()){
+                   for(int j=0;j<$notificationList.getNotification().get(i).getRiskTaker().size();j++){
+                      if($notificationList.getNotification().get(i).getRiskTaker().get(j)==null || $notificationList.getNotification().get(i).getRiskTaker().get(j).equals("")){
+                           check=true;
+                             if(element=="")
+                             element=parent+i+"."+j;
+                             else
+                             element=element+","+parent+i+"."+j;
+                             }
+                    }
+         }else {
+                boolean emptyFlagRowMandatory1 =$notificationList.getNotification().get(i).rowLevelMandatory();
+                if(emptyFlagRowMandatory1 == true){
+                check=true;
+                element = parent+"0.0";
+                }
+         }
+        }
+     }
+     
+     if(check==true){
+           ValidationError error = new ValidationError("Validation",element,"2J", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+           validationErrors.add(error);
+      }
+```
+
+end
+
+rule “2J_1”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.RiskTaker.”;
+String element=””;
+int count=0;
+ArrayList<RiskTaker> riskTakerMap = new ArrayList<RiskTaker>();
+
+```
+        if($notificationList.getNotification()!=null){
+           for(int i=0;i<$notificationList.getNotification().size();i++){
+               if($notificationList.getNotification().get(i).getRiskTaker()!=null && !$notificationList.getNotification().get(i).getRiskTaker().equals("") ) {
+                   for(int j=0;j<$notificationList.getNotification().get(i).getRiskTaker().size();j++){
+                           if($notificationList.getNotification().get(i).getRiskTaker().get(j)!=null && !$notificationList.getNotification().get(i).getRiskTaker().get(j).equals("")){
+                                riskTakerMap.add($notificationList.getNotification().get(i).getRiskTaker().get(j));
+                            }
+                        }
+
+                       if ($notificationList.getNotification().get(i).getRiskTaker()!=null  && $notificationList.getNotification().get(i).getRiskTaker().size() > 1){
+                               for(int k=0;k<$notificationList.getNotification().get(i).getRiskTaker().size();k++){
+                                   if (Collections.frequency(riskTakerMap,$notificationList.getNotification().get(i).getRiskTaker().get(k)) > 1){
+                                       count++;
+                                        if(element=="")
+                                           element=parent+i+"."+k;
+                                        else{
+                                            element=element+","+parent+i+"."+k;
+                                           }
+                                   }
+                               }
+                        }
+                }
+                     riskTakerMap.clear();
+           }
+        }
+        
+      if(count >=1){
+              ValidationError error = new ValidationError("Validation",element,"2J", validationMessages.getERR0050("A significant harm function has been entered more than once. Please remove duplications"));
+              validationErrors.add(error);
+        }
+```
+
+end
+
+rule “2K_null”
+when
+rep0082Kvalue:  SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.ConductRule.”;
+String element=””;
+
+```
+        if($notificationList.getNotification()!=null){
+            for(int i=0;i<$notificationList.getNotification().size();i++){
+                boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+                // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+                if(emptyFlagRowMandatory == true && $notificationList.getNotification().get(i) != null && $notificationList.getNotification().get(i).getConductRule() != null && !$notificationList.getNotification().get(i).getConductRule().isEmpty()){
+                   for(int j=0;j<$notificationList.getNotification().get(i).getConductRule().size();j++){
+                         if($notificationList.getNotification().get(i).getConductRule().get(j)==null || $notificationList.getNotification().get(i).getConductRule().get(j).equals("")){
+                           check=true;
+                             if(element=="")
+                             element=parent+i+"."+j;
+                             else
+                             element=element+","+parent+i+"."+j;
+                             }
+             }
+         }else {
+                  boolean emptyFlagRowMandatory1 =$notificationList.getNotification().get(i).rowLevelMandatory();
+                  if(emptyFlagRowMandatory1 == true){
+                      check = true;
+                      element = parent+"0.0";
+                  }
+                   }
+            }
+        }
+        
+     if(check==true){
+           ValidationError error = new ValidationError("Validation",element,"2K", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+           validationErrors.add(error);
+      }
+```
+
+end
+
+rule “2K_1R”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.ConductRule.”;
+String element=””;
+int count=0;
+
+```
+            ArrayList<ConductRule> conductRuleMap = new ArrayList<ConductRule>();
+            if($notificationList.getNotification()!=null) {
+               for(int i=0;i<$notificationList.getNotification().size();i++){
+                   if($notificationList.getNotification().get(i).getConductRule()!=null && !$notificationList.getNotification().get(i).getConductRule().isEmpty() ){
+                           for(int j=0;j<$notificationList.getNotification().get(i).getConductRule().size();j++){
+                               if($notificationList.getNotification().get(i).getConductRule().get(j)!=null && !$notificationList.getNotification().get(i).getConductRule().get(j).equals("")){
+                                    conductRuleMap.add($notificationList.getNotification().get(i).getConductRule().get(j));
+                                }
+                            }
+                    }
+
+             if ($notificationList.getNotification().get(i).getConductRule()!=null && $notificationList.getNotification().get(i).getConductRule().size() > 1) {
+                    for(int k=0;k<$notificationList.getNotification().get(i).getConductRule().size();k++){
+                        if (Collections.frequency(conductRuleMap,$notificationList.getNotification().get(i).getConductRule().get(k)) > 1){
+                            count++;
+                             if(element=="")
+                                element=parent+i+"."+k;
+                             else{
+                                 element=element+","+parent+i+"."+k;
+                                }
+                        }
+                    }
+             }
+             conductRuleMap.clear();
+            }
+            }
+            
+          if(count >=1){
+                  ValidationError error = new ValidationError("Validation",element,"2K", validationMessages.getERR0050("A conduct rule has been entered more than once. Please remove duplications"));
+                  validationErrors.add(error);
+            }
+ end
+```
+
+rule “2K_1”
+when
+SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+$notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction )
+then
+Boolean check= false;
+String parent=“REP008-NotificationOfDisciplinaryAction.Notification.ConductRule.”;
+String element=””;
+
+```
+if($notificationList.getNotification()!=null){
+   for(int i=0;i<$notificationList.getNotification().size();i++){
+   if($notificationList.getNotification().get(i).getConductRule()!=null && !$notificationList.getNotification().get(i).getConductRule().equals("")){
+               for(int j=0;j<$notificationList.getNotification().get(i).getConductRule().size() ;j++){
+            if($notificationList.getNotification().get(i).getRiskTaker()!=null && !$notificationList.getNotification().get(i).getRiskTaker().equals("")){
+            for(int k=0;k<$notificationList.getNotification().get(i).getRiskTaker().size();k++){
+                                if($notificationList.getNotification().get(i).getConductRule().get(j)!=null && !$notificationList.getNotification().get(i).getConductRule().get(j).equals("") ){
+
+     if( $notificationList.getNotification().get(i).getConductRule().get(j).equals(ConductRule.SC4_YOU_MUST_DISCLOSE_APPROPRIATELY_ANY_INFORMATION_OF_WHICH_THE_FCA_OR_PRA_WOULD_REASONABLY_EXPECT_NOTICE) 
+                && !$notificationList.getNotification().get(i).getRiskTaker().get(k).equals(RiskTaker.STANDARD_NON_EXECUTIVE_DIRECTOR)){
+
+                check=true;
+                   if(element=="")
+                   element=parent+i+"."+j;
+                   else
+                   element=element+","+parent+i+"."+j;
+            }
+       }
+    }
+    }
+    }
+    }
+    }
+
+       if(check){
+             ValidationError error = new ValidationError("Validation",element,"2K", validationMessages.getERR0050("if 2J does not equal 'Standard non-executive director', then 'SC4. You must disclose appropriately any information of which the FCA or PRA would reasonably expect notice' must not be selected"));
+              validationErrors.add(error);
+    }
+ end
+
+ rule "2L"
+     when
+         SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+         $notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+     then
+        Boolean check= false;
+         String parent="REP008-NotificationOfDisciplinaryAction.Notification.InfoOnBreach.";
+         String element="";
+         
+         if($notificationList.getNotification()!=null){
+             for(int i=0;i<$notificationList.getNotification().size();i++){
+                 boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+                 System.out.println("**2L emptyFlagRowMandatory -> "+emptyFlagRowMandatory);
+                 // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+                 if(emptyFlagRowMandatory==true) {
+                        if(($notificationList.getNotification().get(i).getInfoOnBreach()==null || $notificationList.getNotification().get(i).getInfoOnBreach().isEmpty())){
+                                      check=true;
+                                     if(element=="")
+                                     element=parent+i;
+                                     else
+                                     element=element+","+parent+i;
+                         }
+                 }
+             }
+         }
+
+       if(check==true){
+             ValidationError error = new ValidationError("Validation",element,"2L", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+              validationErrors.add(error);
+     }
+   end
+
+   rule "2M"
+       when
+           SaveREP008DataItemRequest($reP008 : rep008DataItem.reP008NotificationOfDisciplinaryAction,
+           $notificationList : rep008DataItem.reP008NotificationOfDisciplinaryAction)
+       then
+          Boolean check= false;
+           String parent="REP008-NotificationOfDisciplinaryAction.Notification.DisciplinaryActionTaken.";
+           String element="";
+           
+           if($notificationList.getNotification()!=null){
+               for(int i=0;i<$notificationList.getNotification().size();i++){
+                   boolean emptyFlagRowMandatory =$notificationList.getNotification().get(i).rowLevelMandatory();
+                   System.out.println("**2M emptyFlagRowMandatory -> "+emptyFlagRowMandatory);
+                   // REMOVED: $reP008.getDeclaration().getNilReturn().equalsIgnoreCase("no") && 
+                   if(emptyFlagRowMandatory==true) {
+                          if(($notificationList.getNotification().get(i).getDisciplinaryActionTaken()==null || $notificationList.getNotification().get(i).getDisciplinaryActionTaken().isEmpty())){
+                                        check=true;
+                                       if(element=="")
+                                       element=parent+i;
+                                       else
+                                       element=element+","+parent+i;
+                           }
+                   }
+               }
+           }
+
+         if(check==true){
+               ValidationError error = new ValidationError("Validation",element,"2M", validationMessages.getERR0050("if row is completed, title, name and one form of identification are mandatory"));
+                validationErrors.add(error);
+       }
+     end
+```
+
+// RULE “2_4” - DELETED (was for preventing fields when nil return = yes)
