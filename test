@@ -1,195 +1,68 @@
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
-import java.util.zip.CRC32;
-import java.util.zip.Deflater;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
+## REP027 guided permission: Special rows not renamed after going back to 1A
 
-/**
- * MultiLayerCompressor - 3-fold (configurable) GZIP compression to photo-friendly text, and back.
- *
- * COMPRESS  : file bytes -> GZIP x LAYERS -> Base64 -> wrap at 40 chars/line
- * DECOMPRESS: join lines -> Base64 decode -> GUNZIP x LAYERS -> verify CRC32 + size -> file
- *
- * Output format:
- *   Line 1   : MLC1|layers=3|name=Foo.java|bytes=412345|lines=10000|crc=123456789
- *   Line 2..N: Base64 payload, 40 chars per line
- *
- * The layer count is stored in the header, so decompress never needs to be told it.
- *
- * Usage:
- *   java MultiLayerCompressor.java compress   <input> <output> [layers]
- *   java MultiLayerCompressor.java decompress <input> <output>
- */
-public class MultiLayerCompressor {
+### The problem
 
-    public static final int DEFAULT_LAYERS = 3;
-    public static final int LINE_WIDTH = 40;
-    private static final String MAGIC = "MLC1";
+A user goes through guided permission and answers everything up to 5A (and 31A if it applies). Then they go back to 1A and change the answer to "EMI only".
 
-    // ─────────────────────────────────────────────
-    //  COMPRESS
-    // ─────────────────────────────────────────────
-    public static void compress(Path input, Path output, int layers) throws IOException {
-        if (layers < 1) throw new IllegalArgumentException("layers must be >= 1");
+What happens:
+- The screen and `tasks.json` say "Completed, go to Check Your Answers".
+- The DB still has the rows named `Special1` and `Special2`. They should have been renamed to the real section names.
+- The status of the Special1 row in the DB stays IN PROGRESS when it should be COMPLETED.
+- If a `Special3` row exists, it stays in the DB, even though Section 10 no longer applies for EMI only.
 
-        byte[] original = Files.readAllBytes(input);
-        long lineCount = countLines(original);
-        long crc = crc32(original);
+So the screen, `tasks.json` and the DB disagree. The task list expects real section names, so it breaks.
 
-        System.out.printf("Input          : %s (%,d lines, %,d bytes)%n", input, lineCount, original.length);
+### Why it happens (4 reasons)
 
-        byte[] data = original;
-        for (int i = 1; i <= layers; i++) {
-            data = gzip(data);
-            System.out.printf("After layer %-3d: %,d bytes%n", i, data.length);
-        }
+**1. The rename only runs for 5A or 31A.**
+The code renames the Special rows only when the question just saved is in `specialEndsAt`, which is 5A or 31A. When the user finishes by changing 1A, the journey is complete, but 1A isn't in that list, so the rename never runs.
 
-        String encoded = Base64.getEncoder().encodeToString(data);
+**2. The status check looks for the wrong row name.**
+`syncSpecialJourney` looks up the current status using the real name, `SafeguardingInstInfo`. At this point the row is still called `Special1`, so it finds nothing. The code reads "nothing found" as a first-time save and goes straight to the next question (2A) without checking whether 2A is already answered. Because it now has a page to go to, it sets the status to IN PROGRESS.
 
-        List<String> out = new ArrayList<>();
-        out.add(String.join("|",
-                MAGIC,
-                "layers=" + layers,
-                "name=" + input.getFileName().toString().replace("|", "_"),
-                "bytes=" + original.length,
-                "lines=" + lineCount,
-                "crc=" + crc));
-        for (int i = 0; i < encoded.length(); i += LINE_WIDTH) {
-            out.add(encoded.substring(i, Math.min(i + LINE_WIDTH, encoded.length())));
-        }
-        Files.write(output, out, StandardCharsets.US_ASCII);
+**3. The next-question logic doesn't check for answers.**
+The code that works out the next question (`nextQidForStatus`) takes it from Drools rules or a fixed flow map. It never checks whether that question is already answered. That's how 2A comes back even though the user answered it long ago.
 
-        System.out.printf("Output         : %s (%,d lines, %,d bytes)%n", output, out.size(), Files.size(output));
-        System.out.printf("Line reduction : %,d -> %,d  (%.1fx)%n", lineCount, out.size(), (double) lineCount / out.size());
-    }
+**4. Special3 is never deleted.**
+When Section 10 gets hidden, the delete code removes rows by the real section name. A row called `Special3` never matches, so it's left behind.
 
-    // ─────────────────────────────────────────────
-    //  DECOMPRESS
-    // ─────────────────────────────────────────────
-    public static void decompress(Path input, Path output) throws IOException {
-        List<String> lines = Files.readAllLines(input, StandardCharsets.US_ASCII);
-        if (lines.isEmpty() || !lines.get(0).startsWith(MAGIC + "|")) {
-            throw new IllegalArgumentException("Not an MLC1 file (missing header line)");
-        }
+### What needs to be done
 
-        Header h = Header.parse(lines.get(0));
+**Fix A: read the status with the right row name (do this first)**
+- Where: `Rep027DbSyncService.syncSpecialJourney`, the two places that read `existingStatus`.
+- Change: use `specialRowName` (Special1/2/3) instead of `realSectionName`.
+- Why: the code then finds the real status, no longer treats the save as a first save, and checks each remaining question properly. This also fixes reason 3 for this case, because 2A is now seen as answered and skipped over.
 
-        StringBuilder payload = new StringBuilder();
-        for (int i = 1; i < lines.size(); i++) {
-            payload.append(lines.get(i).replaceAll("\\s", "")); // tolerate stray spaces/CRLF
-        }
+**Fix B2: rename when the journey is really finished, whatever question was saved**
+- Where: `SaveAndContinueService.processAgendaResponse`, the `updateSpecialSections` call.
+- Change: replace the `specialEndsAt.contains(questionId)` check with a new helper, `isGuidedPermissionJourneyComplete(...)`. The helper returns true only when all of these hold:
+  - every Special1 question (1A to 4C) is answered or skipped
+  - 5A is answered
+  - 31A is answered, or Section 10 doesn't apply because the institution type isn't a valid safeguarding type
+- Why: the rename then runs whenever the user finishes, including after going back to 1A. The helper reads the DB once and adds the current save's Drools results, because the DB isn't updated for this save yet.
 
-        byte[] data;
-        try {
-            data = Base64.getDecoder().decode(payload.toString());
-        } catch (IllegalArgumentException e) {
-            throw new IOException("Base64 payload is corrupted (check for mistyped/OCR characters): " + e.getMessage(), e);
-        }
+**Fix B1: delete Special3 when Section 10 is hidden**
+- Where: `DatabasePruningService.deleteSections`.
+- Change: when the section being deleted is `SafeguardingUnrelatedPaymentServices`, also delete the row named `Special3`.
+- Why: otherwise a leftover Special3 row stays in the DB.
+- Note: if B2 renames Special3 first in the same save, the existing delete may already remove it. B1 covers the case where Section 10 is hidden by a save that doesn't finish the journey.
 
-        for (int i = h.layers; i >= 1; i--) {
-            try {
-                data = gunzip(data);
-            } catch (IOException e) {
-                throw new IOException("Payload corrupted - failed un-gzipping layer " + i
-                        + " (a character in the Base64 lines was changed/lost): " + e.getMessage(), e);
-            }
-        }
+**Log change (small)**
+- Add `flowType` to the Step8a-1 log line so it's easier to debug next time.
 
-        if (data.length != h.bytes) {
-            throw new IOException("Size mismatch: expected " + h.bytes + " bytes, got " + data.length);
-        }
-        long crc = crc32(data);
-        if (crc != h.crc) {
-            throw new IOException("CRC32 mismatch: expected " + h.crc + ", got " + crc);
-        }
+### Order
 
-        Files.write(output, data);
-        System.out.printf("Restored       : %s (%,d lines, %,d bytes) - CRC32 OK, %d layers%n",
-                output, countLines(data), data.length, h.layers);
-    }
+Do A first, then B2, then B1. B2 runs before the DB sync, so once the rows are renamed, the rest of that save runs in normal mode with the real names.
 
-    // ─────────────────────────────────────────────
-    //  HELPERS
-    // ─────────────────────────────────────────────
-    static byte[] gzip(byte[] in) throws IOException {
-        ByteArrayOutputStream baos = new ByteArrayOutputStream(Math.max(64, in.length / 2));
-        try (GZIPOutputStream gz = new GZIPOutputStream(baos) {
-            { def.setLevel(Deflater.BEST_COMPRESSION); }
-        }) {
-            gz.write(in);
-        }
-        return baos.toByteArray();
-    }
+### Still to check
 
-    static byte[] gunzip(byte[] in) throws IOException {
-        try (InputStream gz = new GZIPInputStream(new ByteArrayInputStream(in))) {
-            return gz.readAllBytes();
-        }
-    }
+1. **The DIMS rename code.** The rename itself happens in the data management service, at the endpoint `/update-special-sections/{id}`. Check two things:
+   - does it work when Special3 doesn't exist?
+   - does it only rename, or does it also change the status?
+2. **Testing.** Nothing has been compiled or tested yet.
 
-    static long crc32(byte[] data) {
-        CRC32 c = new CRC32();
-        c.update(data);
-        return c.getValue();
-    }
+### Test cases
 
-    static long countLines(byte[] data) {
-        if (data.length == 0) return 0;
-        long n = 0;
-        for (byte b : data) if (b == '\n') n++;
-        return data[data.length - 1] == '\n' ? n : n + 1;
-    }
-
-    private record Header(int layers, long bytes, long crc) {
-        static Header parse(String line) {
-            int layers = -1;
-            long bytes = -1, crc = -1;
-            for (String part : line.split("\\|")) {
-                int eq = part.indexOf('=');
-                if (eq < 0) continue;
-                String k = part.substring(0, eq), v = part.substring(eq + 1);
-                switch (k) {
-                    case "layers" -> layers = Integer.parseInt(v);
-                    case "bytes" -> bytes = Long.parseLong(v);
-                    case "crc" -> crc = Long.parseLong(v);
-                    default -> { }
-                }
-            }
-            if (layers < 1 || bytes < 0 || crc < 0) {
-                throw new IllegalArgumentException("Header missing layers/bytes/crc: " + line);
-            }
-            return new Header(layers, bytes, crc);
-        }
-    }
-
-    // ─────────────────────────────────────────────
-    //  CLI
-    // ─────────────────────────────────────────────
-    public static void main(String[] args) throws IOException {
-        if (args.length < 3) {
-            System.err.println("""
-                    Usage:
-                      compress   <input> <output> [layers, default 3]
-                      decompress <input> <output>""");
-            System.exit(1);
-        }
-        switch (args[0]) {
-            case "compress" -> compress(Path.of(args[1]), Path.of(args[2]),
-                    args.length > 3 ? Integer.parseInt(args[3]) : DEFAULT_LAYERS);
-            case "decompress" -> decompress(Path.of(args[1]), Path.of(args[2]));
-            default -> {
-                System.err.println("Unknown command: " + args[0]);
-                System.exit(1);
-            }
-        }
-    }
-}
+1. Answer everything, go back and change 1A to EMI only. Expected: rows renamed, Special3 gone, Section 1 COMPLETED.
+2. Change 1A while 5A is still unanswered. Expected: no rename, and the user goes to 5A.
+3. A normal forward run ending at 5A or 31A. Expected: works the same as today.
