@@ -1,31 +1,157 @@
-Change 4 fixes a **different bug** from the rename. The rename fix (changes 1 and 2) makes the rows get the right name. Change 4 makes sure they carry the right **status**.
+Use only this message. There are **5 changes in 3 files**. Make them one file at a time.
 
-## What goes wrong without it
+| # | File | Search for | Action |
+|---|---|---|---|
+| 1 | `SaveAndContinueService` | `restService.updateSpecialSections` | Replace 1 `if` condition |
+| 2 | `SaveAndContinueService` | `private boolean isQuestionAnswered(` | Add 1 new method after it |
+| 3 | `SaveAndContinueService` | `Step8a-1 nextQidForStatus={} "` | Add `flowType` to 1 log line |
+| 4 | `Rep027DbSyncService` | `realSectionName);` inside `syncSpecialJourney` | Change 1 word, in 2 places |
+| 5 | `DatabasePruningService` | `No valid DB section names resolved` | Add 1 block, plus 1 import |
 
-`syncSpecialJourney` runs on every guided-permission save while the Special rows still exist. It decides whether Special1 is COMPLETED or IN PROGRESS.
+---
 
-To decide, it first reads the current status from the DB, but it looks for the row by its real name (`SafeguardingInstInfo`). That row doesn't exist yet; it's still called `Special1`. So it gets nothing back and thinks "this is the first save". Then it takes the next question (2A) and stops there without checking that 2A is already answered. The result is IN PROGRESS, even though Special1 is fully answered.
+## File 1: `SaveAndContinueService` (changes 1, 2, 3)
 
-## Example
+### Change 1: replace the rename condition
+Search for `restService.updateSpecialSections`.
 
-1. The user answers 1A to 4C, then goes back to 1A before answering 5A and saves it again.
-2. There's no rename yet, because 5A isn't answered.
-3. `syncSpecialJourney` runs and writes **Special1 = IN PROGRESS**. That's wrong; all of 1A–4C are answered.
-4. The user goes forward and finishes at 5A. The rename happens, and Special1 becomes `SafeguardingInstInfo`, **still IN PROGRESS**.
-5. The task list shows Section 1 as IN PROGRESS, though it's complete.
+**Delete these 4 lines:**
+```java
+if (firmDataItemExtDao.checkSpecialNameByFirmId(firmDataItemId) > 0
+        && specialEndsAt.contains(questionId)) {
+    restService.updateSpecialSections(String.valueOf(firmDataItemId));
+}
+```
 
-This matches your log: `Case 4 CYA boundary – questionId=1A`, `nextQidForStatus=2A`, `syncSpecialJourney status=IN PROGRESS`.
+**Put this in the same place:**
+```java
+// Rename Special1/2/3 → real names when guided permission ends.
+// Old rule (5A/31A) kept as is. New: also rename when the user finishes
+// from another question (e.g. went back and changed 1A), only if no errors.
+if (firmDataItemExtDao.checkSpecialNameByFirmId(firmDataItemId) > 0
+        && (specialEndsAt.contains(questionId)
+            || (!hasAnyBusinessErrors
+                && isGuidedPermissionJourneyComplete(firmDataItemId, merged, dataProcessingInfo)))) {
+    restService.updateSpecialSections(String.valueOf(firmDataItemId));
+}
+```
 
-With change 4, it reads the status from the `Special1` row, sees the save isn't a first save, checks the remaining questions, finds them all answered, and writes **COMPLETED**.
+### Change 2: add the new method
+Search for `private boolean isQuestionAnswered(`. Go to the end of that method (its closing `}`) and paste this right after it:
 
-## Is it needed for the bug you reported?
+```java
+/**
+ * True when guided permission is really finished, so Special rows can be
+ * renamed even if the last save was not 5A/31A.
+ * Special1 (1A–4C) is not checked here: this is only called when nextQid is
+ * blank, which already means findNextUnansweredQuestion found nothing pending.
+ * Checks: 5A done, and 31A done OR Section 10 not needed.
+ */
+private boolean isGuidedPermissionJourneyComplete(
+        Long firmDataItemId,
+        SaveREP027DataItemRequest merged,
+        DataProcessingInfo dataProcessingInfo) {
 
-Not strictly. With changes 1 and 2, the save that finishes the journey from 1A renames the rows first. That save then takes the normal sync path, and `syncSpecialJourney` doesn't run at all.
+    // One DB read for all rows (isQuestionAnswered would call DIMS every time)
+    List<FirmDataItemExt> journey =
+            restService.retrieveFormJourney(firmDataItemId, dataProcessingInfo);
 
-Change 4 is for the other case: going back and saving **before** the journey is finished. Without it, the rows get renamed correctly later but can carry the wrong status into the task list.
+    // DIMS call failed → don't rename (same as today's behaviour)
+    if (journey == null) {
+        LOGGER.warn("[isGuidedPermissionJourneyComplete] journey null → no rename "
+                + "firmDataItemId={}", firmDataItemId);
+        return false;
+    }
 
-## Risk
+    // Done = answered OR skipped (same rule as findNextUnansweredQuestion)
+    Set<String> done = new HashSet<>(completedQuestionIdsFromDb(journey));
+    done.addAll(skipQuestionIdsFromDb(journey));
 
-It only affects `syncSpecialJourney`, which runs only while Special rows exist, so normal task list sections never reach it. I traced every guided-permission question, and the result is the same as today except when the next question is already answered. That's the bug it fixes.
+    boolean fiveADone = done.contains("5A");
+    // Same rule handleResolutionCases uses for 5A → 31A (EMI only → not needed)
+    boolean section10Done = !isValidSafeguardingInst(merged) || done.contains("31A");
 
-My recommendation is to keep it in this release. If you want the smallest possible fix, you can ship changes 1, 2, 3 and 5 now and do change 4 separately. In that case, run test #14 (answer 1A and 2A, go back, re-save 1A) to see the wrong status for yourself.
+    LOGGER.info("[isGuidedPermissionJourneyComplete] 5A={} section10={} firmDataItemId={}",
+            fiveADone, section10Done, firmDataItemId);
+
+    return fiveADone && section10Done;
+}
+```
+
+### Change 3: log line
+Search for `Step8a-1 nextQidForStatus={} "`.
+
+**Replace:**
+```java
+LOGGER.info("[saveAndPersistToS3] Step8a-1 nextQidForStatus={} "
+        + "firstQid={} firmDataItemId={}",
+        nextQidForStatus, firstQid, firmDataItemId);
+```
+
+**With:**
+```java
+// flowType added: shows if the save ran in guidedPermission mode
+LOGGER.info("[saveAndPersistToS3] Step8a-1 nextQidForStatus={} "
+        + "firstQid={} flowType={} firmDataItemId={}",
+        nextQidForStatus, firstQid, flowType, firmDataItemId);
+```
+
+---
+
+## File 2: `Rep027DbSyncService` (change 4)
+
+### Change 4: change one word in two places
+Go to the method `syncSpecialJourney`. It contains this exact code twice:
+
+```java
+String existingStatus = firmDataItemExtDao.getCompletionStatusForSection(
+        firmDataItemId,
+        REPConstants.SafeGuardingTaskGroup,
+        realSectionName);
+```
+
+In **both** places, change `realSectionName` to `specialRowName`:
+
+```java
+// Row is still "Special1/2/3" here; real name has no row yet → returned null
+String existingStatus = firmDataItemExtDao.getCompletionStatusForSection(
+        firmDataItemId,
+        REPConstants.SafeGuardingTaskGroup,
+        specialRowName);
+```
+
+Don't change any other `realSectionName` in this method or file.
+
+---
+
+## File 3: `DatabasePruningService` (change 5)
+
+### Change 5: delete Special3 too
+Search for `No valid DB section names resolved`. Paste this just **above** the line `if (dbSectionNames.isEmpty()) {`:
+
+```java
+// While guided permission is in progress the Section 10 row is named
+// "Special3", so deleting by real name missed it. Only added when Section 10
+// is already being deleted; other sections are not affected.
+if (dbSectionNames.contains("SafeguardingReturn.SafeguardingUnrelatedPaymentServices")) {
+    dbSectionNames.add(REPConstants.SPECIAL3);
+    LOGGER.info("Section 10 hidden → also deleting '{}' for firmDataItemId: {}",
+            REPConstants.SPECIAL3, firmDataItemId);
+}
+```
+
+Then add this import at the top of the same file:
+```java
+import uk.org.fca.gabriel.sca.rep.common.REPConstants;
+```
+
+---
+
+### Done checklist
+- [ ] Change 1: condition replaced
+- [ ] Change 2: method added
+- [ ] Change 3: log updated
+- [ ] Change 4: `specialRowName` in 2 places
+- [ ] Change 5: block and import added
+- [ ] Builds without errors
+- [ ] Main test: finish guided permission, go back, change 1A to EMI only. In the DB, no `Special` rows should be left.
