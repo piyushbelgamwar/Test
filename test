@@ -1,68 +1,163 @@
-## REP027 guided permission: Special rows not renamed after going back to 1A
+Here's the same code with comments explaining why each part is there.
 
-### The problem
+### Fix B2: rename condition
+**File:** `SaveAndContinueService`, in `processAgendaResponse`, inside the guidedPermission branch that runs when `nextQid` is blank.
 
-A user goes through guided permission and answers everything up to 5A (and 31A if it applies). Then they go back to 1A and change the answer to "EMI only".
+```java
+// ─────────────────────────────────────────────────────────────────────
+// RENAME Special1/2/3 → real section names when guided permission ends.
+//
+// WHY THIS CHANGED:
+//   Before, the rename ran ONLY when the saved question was in
+//   specialEndsAt (5A, 31A). With back navigation, a user can finish the
+//   journey by changing an EARLIER question (e.g. 1A → EMI only).
+//   The journey was complete, tasks.json said COMPLETED / Check Your
+//   Answers, but the rename never ran because 1A is not in specialEndsAt.
+//   Result: Special1/Special2 rows stayed in DB and the task list broke.
+//
+// HOW IT WORKS NOW (two ways to rename):
+//   1. specialEndsAt.contains(questionId)
+//        → today's rule, kept exactly as is, so the normal forward
+//          journey (ending at 5A or 31A) behaves the same as before.
+//   2. isGuidedPermissionJourneyComplete(...)
+//        → NEW. Covers finishing from any other question (1A–4C) after
+//          going back. Only checked when there are no validation errors.
+//
+// WHY checkSpecialNameByFirmId > 0 IS FIRST:
+//   Once guided permission is finished the Special rows are gone (count 0),
+//   so the extra DB call in the helper never runs for task list sections.
+// ─────────────────────────────────────────────────────────────────────
+if (firmDataItemExtDao.checkSpecialNameByFirmId(firmDataItemId) > 0
+        && (specialEndsAt.contains(questionId)
+            || (!hasAnyBusinessErrors
+                && isGuidedPermissionJourneyComplete(firmDataItemId, merged, dataProcessingInfo)))) {
+    restService.updateSpecialSections(String.valueOf(firmDataItemId));
+}
+```
 
-What happens:
-- The screen and `tasks.json` say "Completed, go to Check Your Answers".
-- The DB still has the rows named `Special1` and `Special2`. They should have been renamed to the real section names.
-- The status of the Special1 row in the DB stays IN PROGRESS when it should be COMPLETED.
-- If a `Special3` row exists, it stays in the DB, even though Section 10 no longer applies for EMI only.
+### New helper method
+**File:** `SaveAndContinueService`. Put it next to `isQuestionAnswered()`.
 
-So the screen, `tasks.json` and the DB disagree. The task list expects real section names, so it breaks.
+```java
+/**
+ * Checks whether the guided permission journey is really finished, so the
+ * Special1/2/3 rows can be renamed even when the last save was NOT 5A or 31A
+ * (e.g. the user went back and changed 1A).
+ *
+ * WHY WE DON'T CHECK SPECIAL1 QUESTIONS (1A–4C) HERE:
+ *   This method is only called when nextQid is blank. For a guided permission
+ *   save, nextQid comes from findNextUnansweredQuestion, which already:
+ *     - checks every Special1 question that applies (using the dependency map)
+ *     - always includes 5A
+ *     - includes 31A when Section 10 applies
+ *   So a blank nextQid already means Special1 has nothing pending.
+ *   Checking 1A–4C again here is NOT safe: hidden questions (e.g. 4C when
+ *   4B = named firm) are sometimes in neither COMP_QUES_ID nor
+ *   SKIPPED_QUES_ID, which would block the rename by mistake.
+ *
+ * WHAT WE DO CHECK (extra safety for the cross-section part of the journey):
+ *   - 5A is answered or skipped
+ *   - 31A is answered or skipped, OR Section 10 does not apply
+ *
+ * @return true  → safe to rename the Special rows
+ *         false → do not rename (same as today's behaviour)
+ */
+private boolean isGuidedPermissionJourneyComplete(
+        Long firmDataItemId,
+        SaveREP027DataItemRequest merged,
+        DataProcessingInfo dataProcessingInfo) {
 
-### Why it happens (4 reasons)
+    // One DB read (HTTP call to DIMS) for all rows of this firm data item.
+    // We don't use isQuestionAnswered() because it makes a new HTTP call
+    // every time it is called.
+    List<FirmDataItemExt> journey =
+            restService.retrieveFormJourney(firmDataItemId, dataProcessingInfo);
 
-**1. The rename only runs for 5A or 31A.**
-The code renames the Special rows only when the question just saved is in `specialEndsAt`, which is 5A or 31A. When the user finishes by changing 1A, the journey is complete, but 1A isn't in that list, so the rename never runs.
+    // RestService.retrieveFormJourney returns null when the DIMS call fails.
+    // In that case don't rename — this is the same as today's behaviour,
+    // so a DIMS problem can never make things worse than now.
+    if (journey == null) {
+        LOGGER.warn("[isGuidedPermissionJourneyComplete] journey null → no rename "
+                + "firmDataItemId={}", firmDataItemId);
+        return false;
+    }
 
-**2. The status check looks for the wrong row name.**
-`syncSpecialJourney` looks up the current status using the real name, `SafeguardingInstInfo`. At this point the row is still called `Special1`, so it finds nothing. The code reads "nothing found" as a first-time save and goes straight to the next question (2A) without checking whether 2A is already answered. Because it now has a page to go to, it sets the status to IN PROGRESS.
+    // "Done" = answered (COMP_QUES_ID) OR skipped (SKIPPED_QUES_ID) in any row.
+    // Same rule findNextUnansweredQuestion uses, so both stay in agreement.
+    Set<String> done = new HashSet<>(completedQuestionIdsFromDb(journey));
+    done.addAll(skipQuestionIdsFromDb(journey));
 
-**3. The next-question logic doesn't check for answers.**
-The code that works out the next question (`nextQidForStatus`) takes it from Drools rules or a fixed flow map. It never checks whether that question is already answered. That's how 2A comes back even though the user answered it long ago.
+    // 5A is always part of guided permission (findNextUnansweredQuestion
+    // always adds it), so it must be done before we rename.
+    boolean fiveADone = done.contains("5A");
 
-**4. Special3 is never deleted.**
-When Section 10 gets hidden, the delete code removes rows by the real section name. A row called `Special3` never matches, so it's left behind.
+    // 31A (Section 10) is only needed for valid safeguarding institutions.
+    // isValidSafeguardingInst() is the SAME rule handleResolutionCases uses
+    // to decide whether 5A goes to 31A, so routing and this check match.
+    // e.g. EMI only → not valid → Section 10 not needed → true.
+    boolean section10Done = !isValidSafeguardingInst(merged) || done.contains("31A");
 
-### What needs to be done
+    LOGGER.info("[isGuidedPermissionJourneyComplete] 5A={} section10={} firmDataItemId={}",
+            fiveADone, section10Done, firmDataItemId);
 
-**Fix A: read the status with the right row name (do this first)**
-- Where: `Rep027DbSyncService.syncSpecialJourney`, the two places that read `existingStatus`.
-- Change: use `specialRowName` (Special1/2/3) instead of `realSectionName`.
-- Why: the code then finds the real status, no longer treats the save as a first save, and checks each remaining question properly. This also fixes reason 3 for this case, because 2A is now seen as answered and skipped over.
+    return fiveADone && section10Done;
+}
+```
 
-**Fix B2: rename when the journey is really finished, whatever question was saved**
-- Where: `SaveAndContinueService.processAgendaResponse`, the `updateSpecialSections` call.
-- Change: replace the `specialEndsAt.contains(questionId)` check with a new helper, `isGuidedPermissionJourneyComplete(...)`. The helper returns true only when all of these hold:
-  - every Special1 question (1A to 4C) is answered or skipped
-  - 5A is answered
-  - 31A is answered, or Section 10 doesn't apply because the institution type isn't a valid safeguarding type
-- Why: the rename then runs whenever the user finishes, including after going back to 1A. The helper reads the DB once and adds the current save's Drools results, because the DB isn't updated for this save yet.
+### Fix A: status read
+**File:** `Rep027DbSyncService`, in `syncSpecialJourney`. Make this change in both places that read `existingStatus`.
 
-**Fix B1: delete Special3 when Section 10 is hidden**
-- Where: `DatabasePruningService.deleteSections`.
-- Change: when the section being deleted is `SafeguardingUnrelatedPaymentServices`, also delete the row named `Special3`.
-- Why: otherwise a leftover Special3 row stays in the DB.
-- Note: if B2 renames Special3 first in the same save, the existing delete may already remove it. B1 covers the case where Section 10 is hidden by a save that doesn't finish the journey.
+```java
+// WHY specialRowName AND NOT realSectionName:
+//   During guided permission the DB row is still called "Special1" /
+//   "Special2" / "Special3". The real name (e.g.
+//   "SafeguardingReturn.SafeguardingInstInfo") has no row yet, so reading
+//   by real name always returned null.
+//
+//   null made resolveResumePageId treat every save as a FIRST save and
+//   return nextQidForStatus directly (e.g. 2A) WITHOUT checking whether
+//   it was already answered. That page then forced the status to
+//   IN PROGRESS even though the section was complete.
+//
+//   Reading by specialRowName returns the real status, so
+//   resolveResumePageId walks the remaining questions and skips the
+//   ones already answered.
+String existingStatus = firmDataItemExtDao.getCompletionStatusForSection(
+        firmDataItemId,
+        REPConstants.SafeGuardingTaskGroup,
+        specialRowName);   // was: realSectionName
+```
 
-**Log change (small)**
-- Add `flowType` to the Step8a-1 log line so it's easier to debug next time.
+### Fix B1: delete Special3
+**File:** `DatabasePruningService`, in `deleteSections`. Add this after `dbSectionNames` is built and before the empty check.
 
-### Order
+```java
+// WHY WE ALSO DELETE "Special3":
+//   Rows are deleted by their real section name. But while guided
+//   permission is still in progress, the Section 10 row is named
+//   "Special3", not "SafeguardingReturn.SafeguardingUnrelatedPaymentServices".
+//   So when Section 10 becomes hidden (e.g. 1A changed to EMI only),
+//   the Special3 row never matched and was left behind in the DB.
+//
+//   We only add it when Section 10 is already being deleted, so other
+//   sections are not affected. If no Special3 row exists (normal task
+//   list flow), the delete simply matches 0 rows.
+if (dbSectionNames.contains("SafeguardingReturn.SafeguardingUnrelatedPaymentServices")) {
+    dbSectionNames.add(REPConstants.SPECIAL3);
+    LOGGER.info("Section 10 hidden → also deleting guided permission row '{}' "
+            + "for firmDataItemId: {}", REPConstants.SPECIAL3, firmDataItemId);
+}
+```
 
-Do A first, then B2, then B1. B2 runs before the DB sync, so once the rows are renamed, the rest of that save runs in normal mode with the real names.
+If `REPConstants` isn't imported in `DatabasePruningService` yet, add the import, or use the string `"Special3"` directly.
 
-### Still to check
+### Small log change
+**File:** `SaveAndContinueService`, the Step8a-1 log line.
 
-1. **The DIMS rename code.** The rename itself happens in the data management service, at the endpoint `/update-special-sections/{id}`. Check two things:
-   - does it work when Special3 doesn't exist?
-   - does it only rename, or does it also change the status?
-2. **Testing.** Nothing has been compiled or tested yet.
-
-### Test cases
-
-1. Answer everything, go back and change 1A to EMI only. Expected: rows renamed, Special3 gone, Section 1 COMPLETED.
-2. Change 1A while 5A is still unanswered. Expected: no rename, and the user goes to 5A.
-3. A normal forward run ending at 5A or 31A. Expected: works the same as today.
+```java
+// flowType added so we can see from logs alone whether a save ran
+// in guidedPermission mode (it decides where nextQidForStatus comes from).
+LOGGER.info("[saveAndPersistToS3] Step8a-1 nextQidForStatus={} "
+                + "firstQid={} flowType={} firmDataItemId={}",
+        nextQidForStatus, firstQid, flowType, firmDataItemId);
+```
