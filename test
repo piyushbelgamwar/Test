@@ -1,0 +1,797 @@
+REP027 Safeguarding Return — Architecture Reference
+Nov 16, 2026 · @piyush
+REP027 is a 17-section, 56-question GDS-style online return that one Spring Boot service (dcp-sca-rep3-service) drives end to end: Drools decides every branch, skip and validation; answers live as JSON in S3; and per-section progress lives in MySQL. This document describes how those parts fit, based on the code snapshots in this project (main service snapshot dated 1 July 2026) plus the team's working notes. Where a detail comes only from notes and not from a snapshot, it says so.
+1. Purpose and business context
+REP027 is the FCA's Safeguarding Return (SUP 16 Annex 29BR). Payment and e-money institutions use it to report how they safeguarded client funds over the reporting period: methods used, balances, where funds were held, reconciliations, record keeping and CASS breaches.
+Fact
+Value
+Source
+Handbook reference
+REP027, "Safeguarding Return"
+Utility service constants
+Filers
+About 60,000 UK institutions, quarterly
+Team notes
+Form size
+17 sections, questions 1–56 (146 entries in QuestionsMap incl. table columns)
+Task JSON, QuestionsMap
+XML namespace
+urn:REP027:1, root REP027-SafeguardingReturn, currency=GBP, units=single (both fixed)
+REP027 XSD v1
+Submission channels
+Online form (GDS), CSV upload for table questions, XML upload
+REP027ApiController
+Release gate
+LaunchDarkly flag release-reg-24647 hides REP027 from handbook and NFI lists when off
+UtilityRepository.populateToggleHandbook
+Who answers what
+The first answer (1A, institution category) decides how much of the form a firm sees. The XSD allows eight categories:
+• Authorised payment institution (API)
+• Small payment institution that has opted into safeguarding (SPI opt-in)
+• Electronic money institution (EMI)
+• EMI that also provides unrelated payment services (EMI + UPS)
+• Small EMI (SEMI)
+• SEMI opted into safeguarding for unrelated payment services (SEMI opt-in)
+• Credit union that issues e-money
+• Credit union opted into safeguarding for unrelated payment services (credit union opt-in)
+Sections 1, 2 and 9 apply to everyone. Sections 3–8 open only when 5A ("required to safeguard relevant funds") is Yes. Sections 10 and 17 apply to EMI + UPS, SEMI opt-in and credit union opt-in only, and sections 11–16 open when 31A is Yes.
+2. Platform landscape
+REP027 is one handbook item inside DCP (the Data Collection Platform, also called REGDATA), which the delivery plan sizes at 72 microservices, 31 Lambdas, 10 shared libraries and 8 EMR Spark jobs. Only one of those services, dcp-sca-rep3-service, contains REP027 logic.
+A save enters through Apigee and the Experience Online service, runs entirely inside dcp-sca-rep3-service, and writes to the S3 staging bucket and MySQL; DIMS, utility, CMS and submission services supply the return record, PDF rendering and submission.
+Service names follow DCP's layers: Experience services are the UI-facing APIs, SCA services hold per-return application logic (REP027 sits in the REP3 service with REP026a/b/c), SCS services are shared core services (data items, utility, submission, schedule, CMS), and INT services integrate with external systems. Apigee authenticates the user and injects identity headers that every downstream service reads into a RequestContext.
+3. Service-by-service breakdown
+All REP027 business logic sits in dcp-sca-rep3-service; every other component is shared platform plumbing that it calls over REST or links as a library.
+Component
+Type
+What it does for REP027
+Key classes / endpoints
+dcp-sca-rep3-service (DCP-SCA-REP3-Service)
+Spring Boot microservice, port 9113 (notes)
+Owns the REP027 form: save-and-continue, Drools execution, three-way sync, task list, CYA, CSV, XML upload, PDF data, submission JSON. Also hosts REP026a/b/c controllers.
+REP027ApiController, SaveAndContinueService, Rep027DbSyncService, FirmDataItemExtDaoImpl
+dcp-lib-functional-core
+Shared library (not deployed)
+Drools execution, schema validation, REST client to platform services, S3 repository, common domain (FirmDataItem, DataProcessingInfo, AgendaRuleExecutionResponse)
+ApplicationValidationImpl.runAgendaGroupValidationRule, KieValidationService, RestServiceImpl, S3RepositoryServiceImpl, SaxonicaSchemaValidator
+dcp-experience-online-service
+Experience-layer microservice
+Front-door API the GDS UI calls; forwards to the SCA service (notes)
+Not in snapshots
+DIMS (DCP-SCS-DataItemManagement-Service)
+Microservice
+Firm data item record and form-journey rows (FIRM_DATA_ITEM, FIRM_DATA_ITEM_EXT)
+/retrieve/formJourney, /updateFirmDataItem, /saveFormJourney, /deleteSections, /updateFirmDataItemExt
+DCP-SCS-Utility-Service
+Microservice
+PDF rendering (JasperReports), reference data, currency units, feature flags
+POST /utility/{dataType}/{language}/{version}/pdf, GET /utility/REP027/checkFlag
+DCP-SCS-Submission-Service
+Microservice
+Submit, resubmit, submission tracking and history
+POST /submitData/{firmReferenceNo}, submissionService/submitAll, submissionService/requestResubmission
+CMS service
+Microservice
+Serves label JSON, GLOBAL JSON and the REP027 JRXML for PDFs
+/form/{dataType}/{language}, /cms/{version}/{dataType}/jrxml
+Schedule / firm profile services
+Microservices
+Reporting period dates and firm characteristics
+Called via RestServiceImpl
+dcp-lib-platform-core
+Shared library
+Request context, audit logger, time travel, Datadog metrics
+PlatformCoreConfig, AuditLogger, TimeTravel
+Inside dcp-sca-rep3-service
+The service has 338 source files in the 1 July snapshot. REP027 code lives under uk.org.fca.gabriel.sca.rep.rep027.v1.
+Package
+Responsibility
+Main classes
+rep027.v1.service
+Controller and all orchestration
+REP027ApiController, REP027ApiService, SaveAndContinueService (3,082 lines), Rep027DbSyncService (2,121 lines), SkipRulesProcessingService, ReferencePruningService, DatabasePruningService, TaskListServiceImpl, CommonGDSService, FirmDataItemService, SubmissionAsyncService, SubmissionDataItemServiceImpl, CsvParsingService, Rep027XmlValidationService, RetrieveJsonServiceREP027, GDSAnswerMapper
+rep027.v1.dao
+JDBC access to FDC_APP_METADATA.FIRM_DATA_ITEM_EXT
+FirmDataItemExtDao, FirmDataItemExtDaoImpl (992 lines)
+rep027.v1.domain
+Drools fact model (what rules match on)
+SaveREP027DataItemRequest, REP027DataItem, one class per XML element
+rep027.v1.dto
+API and S3 JSON model
+SaveREP027DataItemResponse, Reference, Question, NextQId, SectionPersistDto, GDSResponse, CheckYourAnswer, ResponseForPDFREP027
+rep027.v1.enums
+Question registry and dependencies
+QuestionsMap (146 entries), DependencyMap, Article114Enum, AssetNotOfTypeEnum
+rep027.v1.csv / xml
+CSV templates and CSV-to-XML wrappers for table questions
+5 CsvDefinitions, CsvDefinitionFactory, 5 XmlWrappers, XmlWrapperFactory
+rep027.v1.config
+Async executor
+AsyncConfig (core 50, max 100, queue 500, CallerRunsPolicy)
+drool.utility.section4 / section12
+Java helpers that Drools calls for row-level table validation
+Section4InsurerValidationService, Section4GuarantorValidationService, Section4CustodianValidationService, Section4SecureLiquidAssetsValidationService and Section 12 twins
+utility
+Generic JSON and form helpers
+FormDataDeletionService, GDSFormUtility, AppUtils, RepXmlToDtoConverter
+common
+Constants and S3 path builders
+REPConstants, UploadStatusTracker, FeatureToggle
+REP027 API (/REP/REP027)
+Method
+Path
+Purpose
+GET
+/v1?firmReferenceNumber&firmDataItemId&accessType
+Load the return: status, current page, submitted-by details
+GET
+/v1/form-builder?featureType&firmDataItemId&fileType
+Page definition from the form-builder bucket plus the answer JSON
+PUT
+/v1/saveAndContinue?firmDataItemId&firmReferenceNumber&questionId&flowType
+Save one page (one or more question IDs, comma separated)
+GET
+/v1/taskList?firmDataItemId
+Task list JSON (tasks.json)
+GET
+/v1/check-answers?firmDataItemId&firmReferenceNumber&answerType&accessType
+Check-your-answers for a section or the whole return
+POST
+/v1/csv?firmReferenceNumber&firmDataItemId&qid (multipart)
+Upload a CSV for a table question
+GET / DELETE
+/v1/csv-status, /v1/csv
+Poll, download or delete an uploaded CSV
+GET
+PDF data endpoint (retrieveREP027ForPDF)
+JSON shaped for the JRXML
+PUT
+/xmluploadschemavalidation/v1
+XSD validation of an uploaded XML
+PUT
+/xmluploadrulevalidation/v1
+Drools validation of an uploaded XML
+GET
+/downloadXml/v1
+Answer JSON converted to REP027 XML
+4. Data model and storage
+One return is spread over three stores that must agree: the answer JSON and the task JSON in S3, and one journey row per section in MySQL. The FIRM_DATA_ITEM row (owned by DIMS) is the parent record that ties them together through FIRM_DATA_ITEM_ID.
+MySQL (FDC_APP_METADATA schema)
+FIRM_DATA_ITEM holds one row per return instance. Columns used by REP027: FIRM_DATA_ITEM_ID, FIRM_REFERENCE_NO, HANDBOOK_REF_NO (REP027), REPORTING_PERIOD_START, REPORTING_PERIOD_END, SUBMISSION_DUE_DT, COMPLETION_STATUS (for example NO DATA, DRAFT, Ready to Submit, SUBMITTED), FIRM_DATA_ITEM_DATA (S3 path of the answer JSON), SUBMISSION_METHOD, REPORTING_BASIS, FLOW_CURRENCY, UPDATED_BY, UPDATED_DATE_TIME.
+FIRM_DATA_ITEM_EXT holds the form journey, one row per section per return. The table is shared with other task-list returns: the 1 Oct 2025 sample also shows CreditBroking, DebtAdjustingDebtCounselling and ProvidingCreditInformationServices task groups.
+Column
+Meaning for REP027
+Example
+ID
+Surrogate key
+183927
+FIRM_DATA_ITEM_ID
+Parent return
+101033649906
+TASK_GRP_NAME
+Always SafeGuardingTaskGroup (older test rows used Safeguarding)
+SafeGuardingTaskGroup
+SECTION_NAME
+Section path, or Special1/Special2/Special3 during guided permission
+SafeguardingReturn.SafeguardingInstInfo
+SUBSECTION
+Unused (null)
+—
+COMPLETION_STATUS
+NOT STARTED, IN PROGRESS, COMPLETED, INVALID
+COMPLETED
+IS_CYA_GENERATED
+Y once the section's check-your-answers page has been produced
+Y
+COMP_QUES_ID
+Comma list of completed question IDs
+4C,1A,2A,4A,4B
+SKIPPED_QUES_ID
+Comma list of skipped question IDs
+3A
+CURRENT_PAGE_ID
+Last page for the section (audit only; see section 9)
+4C
+UPDATED_BY, UPDATED_DATE_TIME
+Audit
+testuser, 2026-05-15 12:15:59
+Other FDC_APP_METADATA tables touched indirectly: FIRMS, REPORTING_BASIS, CURRENCY, FIRM_PREFERENCE, CURRENCY_PREFERENCE, DATA_ITEM_CURRENCY_UNIT, DATA_ITEM_FIXED_CURRENCY, SYSTEM_PARAMETERS, WORKING_DAYS, TIME_TRAVEL, HANDBOOK_REFERENCE.
+S3 layout
+Paths come from REPConstants. The staging bucket is parameter.store.amazon.s3.bucket.name; the form-builder bucket is parameter.store.amazon.s3.form.bucket.name.
+Object
+Path
+Written by
+Answer JSON
+rep/rep027/v1/{fdiId}_REP027/{fdiId}.json
+CommonGDSService.persistToS3
+Task JSON
+rep/rep027/v1/{fdiId}_REP027/tasks.json
+SaveAndContinueService.updateTaskJson / uploadTaskListJsonInS3
+Submission JSON
+{fdiId}_REP027.json in the same folder
+SubmissionDataItemServiceImpl.saveSubmissionDataItemToS3
+Uploaded CSVs
+Same folder, keyed by template file name
+CsvParsingService.saveFileandResponse
+Page definitions
+form/rep/rep027/v1/ (base form) and form/rep/rep027/v1/{path}/{featureType}.json
+Static, read by /v1/form-builder
+CYA metadata
+form/rep/rep027/v1/answersMetaData.json
+Static
+Answer JSON shape
+The answer JSON mirrors the XSD, with three extra blocks the XML never sees:
+• REP027-SafeguardingReturn holds the answers, with @xmlns, @currency and @units attributes and one object per section (for example SafeguardingInstInfo, SafeguardingRelevantFunds.SegregatedRelevantFunds[]).
+• Reference[] holds one entry per section (sectionName) with questions[]. Each question carries id (page ID), questionId, xmlPath, status (for example updated), type (table for Sections 4 and 12) and nextqid.
+• validationErrorResponse and EnabledQIds hold accumulated errors and cross-section enablement.
+Task JSON shape
+tasks.json has one SafeguardingReturn root with sectionList[17]. Each entry has id ("1 to 4"), name and xmlPath (the section path), status, startQID, enabled, hasSubsections, resumePageId, checkYourAnswer, and questionType: table for Sections 4 and 12. The UI builds the task list and its resume links from this file alone.
+5. Form model: sections, questions and IDs
+The form is two mirrored halves: Sections 1–9 cover safeguarding for the institution's main business, and Sections 10–17 repeat the same structure for unrelated payment services. Each section maps to one XML element under REP027-SafeguardingReturn.SafeguardingReturn.
+#
+Section
+XML element
+Questions
+Start page
+Shown when
+1
+Safeguarding institution information
+SafeguardingInstInfo
+1–4
+1A
+Always
+2
+Safeguarding
+Safeguarding
+5–8
+5A
+Always
+3
+Balances
+Balances
+9–10
+9_10
+5A = Yes
+4
+Safeguarding relevant funds (tables)
+SafeguardingRelevantFunds
+11–15
+11AA
+5A = Yes
+5
+Safeguarding resource and requirement
+SafeguardingResourceReq
+16–21
+16A
+5A = Yes
+6
+D+1 segregation resource and requirement
+DPlus1SegregationResourceReq
+22–25
+22A
+5A = Yes
+7
+Safeguarding reconciliations
+SafeguardingRecon
+26–27
+26A
+5A = Yes
+8
+Record keeping
+RecordKeeping
+28
+28A
+5A = Yes
+9
+Notifiable CASS breaches
+CASSBreaches
+29–30
+29A
+Always
+10
+Safeguarding (UPS)
+SafeguardingUnrelatedPaymentServices
+31–34
+31A
+EMI + UPS, SEMI opt-in, CU opt-in
+11
+Balances (UPS)
+BalancesUnrelatedPaymentServices
+35–36
+35_36
+31A = Yes
+12
+Safeguarding relevant funds (UPS, tables)
+SafeguardingRelevantFundsUnrelatedPaymentServices
+37–41
+37AA
+31A = Yes
+13
+Resource and requirement (UPS)
+SafeguardingResourceReqUnrelatedPaymentServices
+42–47
+42A
+31A = Yes
+14
+D+1 segregation (UPS)
+DPlus1SegregationResourceReqUnrelatedPaymentServices
+48–51
+48A
+31A = Yes
+15
+Reconciliations (UPS)
+SafeguardingReconUnrelatedPaymentServices
+52–53
+52A
+31A = Yes
+16
+Record keeping (UPS)
+RecordKeepingUnrelatedPaymentServices
+54
+54A
+31A = Yes
+17
+Notifiable CASS breaches (UPS)
+CASSBreachesUnrelatedPaymentServices
+55–56
+55A
+EMI + UPS, SEMI opt-in, CU opt-in
+Question and page ID conventions
+A question ID (questionId) identifies one answer field; a page ID (id in the Reference block) identifies one screen. They differ whenever a screen holds more than one field.
+Pattern
+Meaning
+Example
+NA
+Single field on its own page
+1A, 5A, 29A
+Number only, shared by fields
+Page that groups several fields
+Page 4 holds 4A (auditor report date) and 4B (audit firm); page 17 holds 17A–17D
+N_M
+Combined page for two numbered questions
+9_10 holds 9A and 10A; 35_36 holds 35A and 36A
+NAA
+Yes/no confirmation in front of a table
+11AA, 12AA, 14AA, 15AA, 37AA
+N (table)
+Repeating table question
+11 segregated funds, 12 assets, 13 custodians, 14 insurers, 15 guarantors
+NA–NF (table)
+Table columns, never pages
+11A–11F; matched by IGNORE_QIDS_REGEX
+NG, ND
+Calculated totals
+11G, 13D, 37G, 39D
+NAx, NBx
+Fieldset rows
+28A page holds 28AB–28AG; 28B holds 28BB–28BG
+QuestionsMap and DependencyMap
+QuestionsMap is the single registry that turns IDs into XPaths, section names, page names and S3 form-builder paths. It has three kinds of entry, told apart by constructor:
+• 2-argument entries (code, xPath) are containers such as "Section 4 - Subsection 3.1". They are grouping labels, not questions, and must be filtered out before anything is written to the database.
+• 3-argument entries add the page (fileName), for example ("4A", "...SafeguardingInstInfo.AuditorReportDate", "4").
+• 4-argument entries add csvName for questions that accept CSV upload.
+Lookups used everywhere: getSectionNameByQuestionId, getXpathByQuestionId, getS3FilePathByQuestionId, getCsvNameByQuestionId, and getSectionNameByQIdBasedOnFlowType, which returns Special1 for 1A–4C, Special2 for 5A and Special3 for 31A when the flow is guidedPermission.
+DependencyMap records each question's parent questions, for example 3A ← 2A, 4A ← 2A, 3A, 6A ← 5A, 11AA ← 6A, 6B, 11A ← 11AA, 13A ← 12A. SaveAndContinueService uses it two ways: collectDependentsForMultipleIds walks dependents transitively from the questions just answered, and findControllers finds the parent questions when it builds Reference entries for newly enabled questions.
+6. Drools rules engine
+Drools is the single source of truth for form behaviour: every branch, skip, visibility change, cross-section enablement and business validation is a rule, and the Java layer only applies the results. The active rules file is Updated drool 16 june (package rulesREP027_v1), running on Drools 7.74.0.Final today.
+How rules are organised
+Every rule sits in an agenda group named {questionId}_{RuleType}, so the service can fire exactly the rules for the page being saved. The 16 June file has 199 agenda-group declarations across 170 distinct groups.
+Rule type (agenda-group suffix)
+Count
+What it produces
+Global it writes
+BusinessRule
+112
+Field and cross-field validation errors
+validationErrors, validationTableErrors
+BranchingRule
+20
+Next page ID
+branchingRuleResponse
+ReEnableRule
+19
+Questions to switch back on after an answer changes
+reEnableQIdsMap
+SkipBranchingRule
+18
+Fields to skip (and later delete)
+skipBranchingRuleResponse
+CrossSectionEnablingRule
+12
+Sections in another part of the form to enable, with a forced resume page
+crossSectionEnablingMap
+VisibilityRule
+8
+Sections to show
+visibilityRuleList
+SkipVisibilityRule
+6
+Whole sections to hide
+skipVisibilityRuleList
+EnableQIdsRule (shared group)
+4
+Question IDs enabled by current answers
+enableQIdsMap
+Two KIE sessions are defined in kmodule.xml: ksession-rules-REP027_v1 for online saves and ksession-rules-REP027-xml-v1 for XML uploads (branching XML). KieValidationService reads kmodule.xml at startup and creates each session once to warm the container, then hands out a new KieSession per request from the classpath KieContainer.
+How Java calls the rules
+ApplicationValidationImpl.runAgendaGroupValidationRule(request, dpInfo, questionIds, completedQuestionIds) in dcp-lib-functional-core does the work:
+1.  Opens a new session, sets the error globals and inserts the merged SaveREP027DataItemRequest as the only fact.
+2.  For each question ID on the page, resets the per-question globals, then focuses and fires these groups in order: BusinessRule, BranchingRule, VisibilityRule, SkipVisibilityRule, SkipBusinessRule, CrossSectionEnablingRule, ReEnableRule, then the shared EnableQIdsRule.
+3.  Stores non-empty results per question ID in branchingRuleMap, skipBranchingRuleMap, visibilityRuleMap and skipVisibilityRuleMap.
+4.  Fires only BusinessRule for every question already completed in the database, so a change on one page can raise errors on earlier pages.
+5.  Returns an AgendaRuleExecutionResponse with nine collections and disposes the session in finally.
+If the page being saved has its own business error, SaveAndContinueService.setAgendateResponseForValidationError empties every navigation map, so a page with an error never branches, skips or enables anything.
+Rule details worth knowing
+• Table rows in Sections 4 and 12 are validated by Java helpers that rules call, for example Section4InsurerValidationService and Section12CustodianValidationService, and they report through validationTableErrors with a page ID and row index.
+• 8A_CrossSectionEnablingRule_Q17: when 8A (non-standard reconciliation method) is No, it enables Section 5 with resumePageId=17, status=PRESERVE and forceMandatory=true. 34A_CrossSectionEnablingRule_Q43 does the same for Section 13 and page 43.
+• An earlier NullPointerException in the 8A and 34A rules was fixed by collapsing several pattern lines into one pattern with comma-separated constraints, so Drools stops evaluating as soon as a null guard fails (team notes).
+• Rules still use System.out.println for tracing; these go to container stdout rather than the application logger.
+7. Request lifecycle: save and continue
+Every page save goes through PUT /REP/REP027/v1/saveAndContinue and one method, SaveAndContinueService.saveAndPersistToS3, which runs these steps in order. The questionId parameter can hold several IDs (one page can carry 4A and 4B), and flowType is one of guidedPermission, taskList, checkYourAnswer or permissions.
+1.  Load state. Read the answer JSON from S3 (fetchExistingAnswers) and the per-section CYA flags from FIRM_DATA_ITEM_EXT (fetchCYAStatusForFirmDataItemId).
+2.  Merge. mergeInput overlays the request on the stored answers and records changed fields in fieldUpdateStatusMap. A permissions save into a section whose CYA is already generated is marked UPDATED straight away.
+3.  Enrich. enrichRequestWithPeriodEndDate adds the reporting period end (date rules need it); markObjectsNull clears objects the request explicitly emptied.
+4.  Load journey. restService.retrieveFormJourney (DIMS) returns the section rows; their completed IDs become completedIdsFromDb.
+5.  Run Drools. runAgendaGroupValidationRule fires the page's agenda groups and re-validates completed questions (section 6).
+6.  Collect errors. accumulateValidationErrors merges new errors with stale ones from other sections, because Drools only fires the current page's groups. If the current page has an error, all navigation maps are cleared.
+7.  Confirm deletions. If the answer would wipe data elsewhere and the user has not yet confirmed (isConfirmedForDeletion == null), createResponseForUserConfirmation returns a warning listing affected references, and nothing is saved.
+8.  Mark in progress. updateTaskJson sets the section to IN PROGRESS in tasks.json.
+9.  Work out next page. processAgendaResponse turns branching results into nextQIds and the CYA target.
+10.  Detect guided-permission rows. If any Special row exists, or Section 1 has no row yet, the save is a special flow and specialRowName resolves to Special1, Special2 or Special3.
+11.  Update references. populateReferenceStatusMap and updateReferencePart rebuild the Reference block: newly enabled questions, UPDATED flags and CYA flags.
+12.  Apply skips. SkipRulesProcessingService.processSkipRulesAndDeleteFormData deletes skipped fields and hidden sections from the answers (FormDataDeletionService), prunes references (ReferencePruningService) and deletes removed sections and CSV files from the database and S3 (DatabasePruningService). Errors on skipped fields are then dropped (filterSkippedValidationErrors).
+13.  Persist answers. CommonGDSService.persistToS3 writes the answer JSON.
+14.  Resolve the status page. In guided permission, the next page comes from the Drools branching map, then resumePageIds, then the static flowmap.properties; otherwise from step 9.
+15.  Sync the journey. For each question ID (plus any completed ID that now has an error), Rep027DbSyncService.syncAfterPersist updates the section row and any impacted sections (section 8).
+16.  Update the return. FirmDataItemService.updateFirmDataItemSmart moves FIRM_DATA_ITEM.COMPLETION_STATUS through DIMS (for example first save to draft).
+17.  Audit. SubmissionAsyncService.logAuditEventAsync logs the change on the asyncTaskExecutor pool.
+18.  Respond. The response carries the sorted Reference block, nextQIds, validation errors and the CYA form-builder content.
+Failures map to clear HTTP outcomes: unknown JSON fields and malformed JSON become 400, a missing return becomes FirmDataItemNotFoundException, and anything else is wrapped as "Failed to save REP027 data" and returned as 500 by the controller.
+8. Three-way sync
+The hardest part of REP027 is keeping three copies of progress consistent on every save: the answer JSON (what was answered, which references are valid, which errors stand), tasks.json (what the task list shows and where to resume) and FIRM_DATA_ITEM_EXT (which questions are completed or skipped per section). Rep027DbSyncService is the orchestrator, and S3 must be written before the database is synced.
+Store
+Owns
+Read by
+Answer JSON (S3)
+Answers, Reference statuses, validationErrorResponse, nextQIds
+Form pages, CYA, PDF, submission, XML download
+tasks.json (S3)
+Section status, enabled, resumePageId, checkYourAnswer
+Task list and resume navigation in the UI
+FIRM_DATA_ITEM_EXT (MySQL)
+COMPLETION_STATUS, COMP_QUES_ID, SKIPPED_QUES_ID, CURRENT_PAGE_ID, IS_CYA_GENERATED
+Drools re-validation (completed IDs), status rules, reporting
+syncAfterPersist, step by step
+1.  If the save is a guided-permission special flow, call syncSpecialJourney to update the Special1/2/3 row and stop.
+2.  Find the section from the first question ID (QuestionsMap.getSectionNameByQuestionId).
+3.  Build skipped IDs from the Drools skip maps plus what the database already holds (buildSkippedIds).
+4.  Build completed IDs from the final references, skipped IDs, merged answers and existing COMP_QUES_ID (buildCompletedQids).
+5.  Check for errors in this section (buildErrorQidsForSection).
+6.  Choose CURRENT_PAGE_ID: with errors, the first pending page after the current one (findFirstPendingPageId); without errors, resolveResumePageId.
+7.  Decide the status using the table below.
+8.  Write the row with saveJourney (completed and skipped lists, status, page).
+9.  If the section has no errors, update other sections the answer affected (syncImpactedSectionsStatus) and write cross-section skipped IDs (syncCrossSectionSkippedIds).
+10.  Always run handleCrossSectionalInvalid, which marks other sections INVALID when their completed answers now fail validation.
+Condition
+Section status
+This section has a business error
+INVALID
+No error, no next page, but other questions in the section still have errors
+INVALID (page set to the first error)
+No error, no next page, and (section was already COMPLETED, or the page was the last/CSV page, or every remaining question is completed or skipped)
+COMPLETED
+No error, no next page, otherwise
+IN PROGRESS
+No error, there is a next page, but other questions in the section have errors
+INVALID
+No error, there is a next page
+IN PROGRESS
+Database write patterns
+FirmDataItemExtDaoImpl uses three patterns to survive re-enabled sections and concurrent saves:
+• Update, then insert. batchUpsertSectionStatus and updateSectionStatuses run a batch UPDATE first, then INSERT only for sections where the update hit 0 rows. A 0-row update means DatabasePruningService.deleteSections removed the row when the section was hidden and the user has now re-enabled it.
+• Insert-ignore shells. batchInsertIgnoreSectionsNotStarted uses INSERT IGNORE to create NOT STARTED rows, so two requests cannot create duplicates.
+• Shell row for cross-section skips. updateCrossSectionSkippedQuesId inserts a NOT STARTED row carrying only SKIPPED_QUES_ID when the target section has no row yet.
+Ordering and the Task JSON buffer
+The rule is S3 first, database second, so a database row never points at answers that were not saved. After the 1 July snapshot, the team added TaskJsonBuffer (team notes, not in project snapshots): a per-request dirty write-back buffer that cuts S3 traffic from 4–6 round trips per save to one read and one write. It is a plain local object rather than a ThreadLocal, so data cannot leak between requests on pooled threads, and its flush runs in a finally block before the database sync.
+9. Navigation, journeys and check your answers
+The UI navigates from resumePageId in tasks.json, not from CURRENT_PAGE_ID in the database. When a user lands on the wrong page, look at the task JSON first.
+Three journeys
+A firm passes through up to three journeys, and REP027ApiService.determinePermissionFlow picks the entry point when the return is opened.
+Journey (flowType)
+When
+What the user sees
+Database rows
+Guided permission (guidedPermission)
+Editor, guided permission not finished (a Special row exists or status is NO DATA)
+Linear questions 1A–4C, then 5A, then 31A, which decide which sections exist
+Special1 (1A–4C), Special2 (5A), Special3 (31A)
+Task list (taskList)
+Guided permission finished
+The 17-section task list with status tags and resume links
+One row per enabled section
+Check your answers (checkYourAnswer, permissions)
+Change-answer links from CYA, or a read-only user who has not finished guided permission
+CYA summary; a change returns to CYA when no new questions open up
+Same rows; IS_CYA_GENERATED = Y marks reviewed sections
+On load, determineCurrentPage reads tasks.json and decides where to resume during guided permission: back into Section 1 if it is in progress and Sections 2 and 10 are not started, else to Section 2's start page, else to Section 10's start page, defaulting to 1A.
+Status vocabulary
+Status
+Where
+Meaning
+NOT STARTED
+DB, task JSON
+Section enabled but untouched; also the shell rows created by insert-ignore
+IN PROGRESS
+DB, task JSON
+At least one page saved, more to do
+COMPLETED
+DB, task JSON
+Every remaining question answered or skipped
+INVALID
+DB, task JSON
+A completed answer in the section now fails a business rule, often because of a change in another section
+PRESERVE
+Drools output only
+Cross-section enabling: keep the target section's existing status
+NO DATA, DRAFT, Ready to Submit, SUBMITTED, COPY CREATED
+FIRM_DATA_ITEM
+Whole-return status, shown on the PDF ("COPY CREATED" renders as "Previous version")
+Check your answers
+GET /v1/check-answers reads the answer JSON, runs AppUtils.updateStatusAndControlForGroup for the requested answerType (one section or all), writes the JSON back to S3, then marks questions that still carry validation errors. When answerType=all, it also starts an asynchronous "Ready to Submit" update of FIRM_DATA_ITEM if the whole return is clean.
+Change-answer and back navigation
+• A save is a change or back action when every saved question is already completed in the database (isChangeOrBack).
+• Changed fields are flagged UPDATED in the Reference block, which the CYA page uses to decide whether to return straight to CYA or walk through newly enabled questions.
+• Cross-section effects: a change can enable another section (crossSectionEnablingMap), hide one (skipVisibilityRuleMap, row deleted), or invalidate one (handleCrossSectionalInvalid).
+• Backward navigation through a previousQId field was added after the 1 July snapshot (team notes).
+10. Table questions: CSV upload, manual entry and delete row
+Sections 4 and 12 are the only repeating-table parts of the form, and they accept rows either typed in (online manual entry) or uploaded as one CSV per table. Both paths end in the same answer JSON arrays, so Drools, CYA, PDF and submission treat them identically.
+Page
+Table
+XML element (Section 4 / Section 12)
+CSV template (Section 4)
+Columns
+11 / 37
+Segregated relevant funds
+SegregatedRelevantFunds[]
+SegregatedRelevantFunds.csv
+11A–11F: institution, account type, number of accounts, funds at period end, fixed term or notice, country
+12 / 38
+Secure liquid assets
+SecureLiquidAssets.Assets[]
+Assets.csv
+Asset, Article 114 paragraphs (up to 4), "not of a type" flag
+13 / 39
+Custodians
+SecureLiquidAssets.Custodians[]
+Custodians.csv
+Custodian name, asset, total value
+14 / 40
+Insurers
+InsPoliciesGuarantees.Insurer[]
+Insurer.csv
+Name, unlimited flag, max cover, expiry date, overdue premiums
+15 / 41
+Guarantors
+InsPoliciesGuarantees.Guarantors[]
+Guarantors.csv
+Name, unlimited flag, cover, expiry date, overdue premiums
+Section 12 templates carry an UnrelatedPaymentServices prefix, for example UnrelatedPaymentServicesSegregatedRelevantFunds.csv. Each table page sits behind a yes/no confirmation page (11AA, 12AA, 14AA, 15AA and their Section 12 twins) and is followed by calculated totals (11G, 13D, 37G, 39D).
+CSV upload pipeline
+POST /v1/csv calls CsvParsingService.processCsvFile:
+1.  validateCsvForQid and validateInputFile check that the file belongs to this question and is a usable CSV.
+2.  CsvDefinitionFactory picks the Spring bean named after the file (lower-cased, without .csv). An unknown name fails with "Upload a file that matches the template for this section".
+3.  parseCsv checks headers against getExpectedHeaders() (header text comes from csv.srf.* properties) and maps rows to DTOs with a Jackson MappingIterator. An empty file fails with "The file does not contain any data".
+4.  pojoToXml2 wraps the rows with the matching XmlWrapper (SegregatedRelevantFundsXmlWrapper, AssetsXmlWrapper, CustodiansXmlWrapper, InsurerXmlWrapper, GuarantorsXmlWrapper) and builds an XML fragment.
+5.  applicationService.schemaValidationAsync validates it with Saxon against schema/REP027/v1/REP027-Schema-csv.xsd, a cut-down schema that contains only Sections 4 and 12.
+6.  On success, the file and a status record are saved to S3 and UploadStatusTracker is set to SUCCESS; on failure, markFailed stores the errors and the tracker says "Failed Validation".
+The UI polls GET /v1/csv-status, can download the stored file with GET /v1/csv and remove it with DELETE /v1/csv. When a table question is skipped, DatabasePruningService.deleteRemovedCsvFiles deletes its CSV.
+Delete row
+Deleting a row in Section 4 (11–15) or Section 12 (37–41) touches four layers (team notes): the array in the answer JSON, the section-specific JSON, the ValidationTableError entries (which must be re-indexed so error row numbers still match), and the task JSON and FIRM_DATA_ITEM_EXT status. The uploaded CSV in S3 is left untouched by delete row.
+11. XML, submission and PDF
+The answer JSON is the master copy; XML, the submission JSON and the PDF are all produced from it on demand. The XSD (urn:REP027:1, version 1 dated 7 November 2025, including CommonTypes v18) is the contract that XML uploads and downloads must meet.
+XML upload and download
+Step
+Endpoint
+What happens
+Schema check
+PUT /xmluploadschemavalidation/v1
+Saxon validates the file against REP027-Schema.xsd (SaxonicaSchemaValidator, SchemaErrorListener); errors are mapped to friendly messages
+Rules check
+PUT /xmluploadrulevalidation/v1
+The XML is converted to SaveREP027DataItemRequest and run through the ksession-rules-REP027-xml-v1 session
+Store
+Rep027XmlValidationService.saveDataToS3andDB
+Writes the answer JSON, builds Reference entries from the XML paths, builds SectionPersistDto rows and tasks.json, and saves all section rows in one go (insertAndUpdateQuestionStatusInXMLFlow)
+Download
+GET /downloadXml/v1
+REP027ApiService.convertRep027JsonToXml walks the answer JSON and replaces the root tag with the full REP027-SafeguardingReturn element, namespace and schemaLocation
+Schema facts that matter for validation: monetary fields are MonetaryType (integer, up to 15 digits, may be negative), counts are NonNegativeIntegerType, dates are DateRestriction (1915-01-01 to 2099-12-31), free text is String100Type, MethodsDuringReportingPeriod allows up to 3 values and Article114ParagraphComplied up to 4.
+Submission
+• SubmissionDataItemServiceImpl.saveSubmissionDataItemToS3 formats dates and writes {fdiId}_REP027.json, the payload the submission service picks up.
+• getReadyToSubmitStatus reads readyToSubmitState from the answer JSON; SubmissionAsyncService.updateCompletionStatusFireAndForget moves FIRM_DATA_ITEM to Ready to Submit in the background after a clean check-answers?answerType=all.
+• DCP-SCS-Submission-Service then handles submit (/submitData/{firmReferenceNo}, submitAll), resubmission requests, tracking entries and history. Audit events are written for status changes (logAuditEventsAsync).
+PDF
+The PDF is built in two services: dcp-sca-rep3-service shapes the data, and DCP-SCS-Utility-Service renders it.
+1.  retrieveREP027ForPDF returns ResponseForPDFREP027: firm and schedule header fields plus GDSResponse[], a tree of task group → sections → questions, where each question has question, answer, options and an optional fieldset for tables.
+2.  POST /utility/REP027/{language}/{version}/pdf fetches the label JSON and GLOBAL JSON from CMS, rewrites dots in label keys to underscores, and merges labels, globals and data into one JSON.
+3.  It fetches the REP027 JRXML from CMS (/cms/{version}/REP027/jrxml), compiles it with JasperReports, fills it from a JsonDataSource and exports with JRPdfExporter using the sRGB ICC profile.
+4.  The JRXML (REP027_Dynamic_Report, A4, FCA_VERDANA font, tagged PDF with H1–H5 headings) nests four lists: TaskGroupDS → SectionsDS → QuestionsDS → OptionsDS or FieldSetDS.
+The PDF is also produced for the No Data and guided-permission scenarios (team notes). Platform-wide, 267 Jasper reports move to JasperReports 7.0.7 as part of the migration.
+12. Infrastructure, runtime and performance
+REP027 runs as containers on AWS ECS Fargate in eu-west-1, with configuration from Parameter Store, secrets from Secrets Manager and tracing in Datadog. The current performance work aims at 300 concurrent users (team notes).
+Area
+Setting
+Source
+Compute
+ECS Fargate, 2 vCPU and 8 GB per container
+Team notes
+Region
+eu-west-1 for S3, DynamoDB, SSM
+S3Config, AwsRegion
+Config
+FdcParameterStoreEnvironment resolves parameter.store.* keys (bucket names, DB host, service hosts)
+Utility and functional-core code
+Secrets
+DB password and API keys from Secrets Manager (Utilities.getSecretValue)
+Utility service code
+Feature flags
+LaunchDarkly through dcp-lib-feature-manager (app regdata); older date-based toggles in SSM (FeatureToggle)
+FeatureFlag, FeatureToggle
+Observability
+Datadog APM @Trace on controller methods, DogStatsD via dcp-lib-platform-core, Spring Actuator
+Controller, dependency tree
+Async work
+asyncTaskExecutor: core 50, max 100, queue 500, keep-alive 60 s, CallerRunsPolicy, waits 120 s on shutdown
+AsyncConfig (its comment says "~500 concurrent users")
+Database
+MySQL (RDS), JDBC with JdbcTemplate, HikariCP pool being tuned
+DAO code, team notes
+JVM
+G1GC, equal min and max heap, capped Metaspace, explicit CPU count for the container
+Team notes
+Local dev
+LocalStack for S3; a trust-all HTTP client in the local profile only
+Team notes, RegDataHttpClient
+Current stack versions (dependency trees of 2 July 2026)
+Component
+Version
+Java
+17
+Spring Boot / Spring Framework
+3.4.1 / 6.2.1
+Embedded Tomcat
+10.1.34
+Drools / KIE
+7.74.0.Final (with drools-mvel, MVEL 2.4.15)
+AWS SDK
+v2 2.20.32, alongside v1 1.11.x in older modules
+Jackson
+2.15.2 to 2.18.2 (mixed)
+MySQL driver
+mysql-connector-java 8.0.21, mysql-connector-j 9.3.0 in batch jobs
+Spark (EMR jobs)
+3.5.5 on Scala 2.12
+Other
+Staxon 1.3 (JSON↔XML), Saxon (schema validation), JasperReports (PDF)
+Performance work in flight (team notes)
+• S3 consolidation with TaskJsonBuffer: one read and one write per save instead of 4–6 round trips.
+• HikariCP pool sizing and JVM flags tuned for the 2 vCPU container.
+• Load target: 300 concurrent users.
+13. Java 21 and Spring Boot 4 migration
+The REGDATA platform is moving from Java 17 and Spring Boot 3.4.1 to Java 21 and Spring Boot 4.1.0 over 14 sprints that started on 6 July 2026, with go-live planned for about 19 February 2027. dcp-sca-rep3-service is a high-complexity Wave 3 service: built in Sprint 8 (2–15 Nov 2026) and tested in Sprint 9 (18 Nov–1 Dec 2026), which starts this week.
+Wave 3 build overlaps the end of Wave 2 because of the partial Diwali sprint; the REP027 service test window sits inside the Wave 4 build, which leaves about 11 weeks of regression, UAT and deployment before go-live.
+Plan fact
+Value
+Capacity
+2 dev teams at about 65 SP per sprint; 2–3 testers working one sprint behind
+Effort
+Dev 550 SP, test 382 SP (SIT 272, BAT 68, NFT 42), total 932 SP; 1 SP = 1 dev-day
+Testing per service
+SIT (with rollback), BAT sanity and NFT in the same test sprint
+Breaks
+Diwali 19–30 Oct 2026, Christmas 25 Dec 2026–2 Jan 2027
+Tooling
+OpenRewrite (rewrite-maven-plugin 6.43.0, rewrite-migrate-java 3.39.0), Karate regression pack
+REP027's dependencies in the plan
+Module
+Complexity
+Dev SP
+Test SP
+Dev sprint
+Test sprint
+Wave
+dcp-lib-platform-core
+High
+4
+4
+1
+2
+Pilot
+dcp-lib-functional-core
+High
+4
+4
+2
+3
+Wave 1
+DCP-Experience-Online-Service
+Low
+4
+2
+2
+3
+Wave 1
+DCP-SCS-DataItemManagement-Service
+Medium
+5
+2
+5
+6
+Wave 2
+dcp-sca-rep3-service
+High
+5
+4
+8
+9
+Wave 3
+DCP-SCS-Utility-Service
+High
+5
+4
+9
+10
+Wave 4
+DCP-SCS-Submission-Service
+Medium
+5
+3
+9
+10
+Wave 4
+PDF changes (267 Jasper reports, JasperReports 7.0.7)
+Medium
+15
+8
+10
+11
+Wave 4
+REP027-specific migration work
+• Drools 7.74 to Apache KIE 10.2.0. The 16 June DRL must be checked for three breaking changes: the executable model becomes mandatory, drools-mvel is deprecated, and the with statement is removed. KieValidationService (classpath KieContainer plus kmodule.xml scan) must keep working for both REP027 sessions.
+• javax to jakarta. Some modules still import javax.*; for example the 6 March utility-service snapshot uses javax.annotation.PostConstruct, javax.validation and javax.ws.rs.Produces.
+• AWS SDK v1. The utility service still builds S3, SSM and DynamoDB clients with SDK v1 builders alongside SDK v2 2.20.32 elsewhere.
+• EMR jobs. Spark 4.x is needed for Java 21, which brings Scala 2.13 and ANSI SQL defaults (piloted on dcp-scs-intactaggrbatchstartentries-service).
+14. Engineering principles, pitfalls and open questions
+Principles the team works by
+• Drools owns behaviour. Branching, skip, visibility and business validation live in agenda groups; Java applies results and never re-implements a rule.
+• Surgical fixes. Change the smallest thing that fixes the bug, test it, then move on; do not restructure working code while fixing.
+• S3 before database. Flush the task JSON and answer JSON before syncing FIRM_DATA_ITEM_EXT, so the three stores never disagree in the database's favour.
+• No ThreadLocal for request state. Request-scoped buffers are plain local objects so pooled threads cannot leak data between firms.
+• Containers are not questions. Filter 2-argument QuestionsMap entries out before writing IDs to the database.
+• Keep stale errors on purpose. Drools fires only the current page, so errors from other sections are carried forward by accumulateValidationErrors and cleared only when their own page is fixed.
+• Idempotent inserts. Use INSERT IGNORE (or update-then-insert) for rows other requests may create at the same time.
+Pitfalls when debugging
+Symptom
+First place to look
+User resumes on the wrong page
+resumePageId in tasks.json, not CURRENT_PAGE_ID
+Section stuck INVALID after the user fixed it
+validationErrorResponse in the answer JSON and handleCrossSectionalInvalid
+Section reappears with old answers
+Update-then-insert path in batchUpsertSectionStatus; check DatabasePruningService deleted both the row and the CSV
+Duplicate journey rows
+A write that bypassed INSERT IGNORE; a Special row that was never converted to its real section name
+Rule silently not firing
+Agenda group name typo ({qid}_{RuleType}), or a null guard spread across several pattern lines
+Table error points at the wrong row
+ValidationTableError row index not re-indexed after delete row
+Open questions and risks found while writing this
+[ ] Section 12 insurer element name. The 7 Nov 2025 XSD names the Section 12 insurer rows Insurers, while Section 4, the CSV XSD and the answer JSON use Insurer. An XML download of Section 12 insurers may fail schema validation. Confirm which is correct.
+[ ] Element order differs between XSDs. The full XSD orders MaxCoverPolicyUnlimited before MaxAmountCoverPolicy (and GuaranteeUnlimited before AmountCoverGuarantee); the CSV XSD has the reverse. xs:sequence enforces order, so the JSON-to-XML converter must follow the full XSD.
+[ ] CSV XSD enum drift. The CSV XSD allows "Asset is not of a type referred to in CASS 15.4.2G" inside Article114ParagraphComplied; the full XSD keeps it in the separate AssetNotOfType element.
+[ ] "Not Started" casing. REPConstants.NOT_STARTED is Not Started, but SQL writes 'NOT STARTED'. Check every comparison is case-insensitive.
+[ ] Async pool sizing. AsyncConfig is sized for about 500 users with CallerRunsPolicy; under saturation, audit logging runs on request threads. Re-check against the 300-user NFR.
+[ ] Rule logging. Rules print to stdout; consider a logger global before the KIE 10 move.
+[ ] Snapshot age. The main service snapshot is from 1 July 2026; TaskJsonBuffer and previousQId are described from notes only. Upload a current snapshot to confirm sections 8 and 9.
+[ ] Module count. Notes say 108 modules; the plan's register has 116 rows (some services listed twice) and its summary counts 72 microservices, 31 Lambdas, 10 libraries and 8 EMR jobs. Reconcile before wave sign-off.
+Sources
+Project documents in the Office project: DCP-SCA-REP3 1 july (service code), REP027DBSYNC 18 june, Updated drool 16 june (rules), dcp-functional-core 3 july, DCS-UTILITY-SERVICE 6 MARCH, DCP-SUBMISSION-SERVICE 25 FEB, Task json + Answer json (15 May 2026 samples), DB we are using to make the changes (1 Oct 2025 table export), REP027 XSD, REP027 JRXML, Page how it looks in UI, 2 july pom.xml (dependency trees) and DPRING BOOT PLAN. Items marked "team notes" come from the team's saved working notes rather than code.
